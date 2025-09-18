@@ -1,0 +1,208 @@
+package camera
+// import (
+// 	"context"
+// 	"fmt"
+// 	"log"
+// 	"net/url"
+// 	"path/filepath"
+// 	"time"
+
+// 	"camera-detection-project/internal/config"
+
+// 	"github.com/bluenviron/gortsplib/v4"
+// 	"github.com/bluenviron/gortsplib/v4/pkg/base"
+// 	"github.com/bluenviron/gortsplib/v4/pkg/format"
+// 	// "github.com/bluenviron/gortsplib/v4/pkg/format/rtph264"
+// 	"github.com/pion/rtp"
+// 	// "gocv.io/x/gocv"
+// )
+
+// // Camera представляет RTSP камеру
+// type Camera struct {
+// 	config     config.CameraConfig
+// 	client     *gortsplib.Client
+// 	frames     chan []byte
+// 	frameNum   int
+// }
+
+// // New создает новый экземпляр камеры
+// func New(cfg config.CameraConfig) *Camera {
+// 	return &Camera{
+// 		config: cfg,
+// 		frames: make(chan []byte, 100), // буфер для H.264 кадров
+// 	}
+// }
+
+// // Start запускает получение видеопотока с камеры
+// func (c *Camera) Start(ctx context.Context) error {
+// 	log.Printf("Подключение к камере: %s", c.maskURL(c.config.RTSPUrl))
+
+// 	// Парсим RTSP URL
+// 	rtspURL, err := c.parseRTSPURL()
+// 	if err != nil {
+// 		return fmt.Errorf("ошибка парсинга RTSP URL: %v", err)
+// 	}
+
+// 	// Создаем RTSP клиент
+// 	client := &gortsplib.Client{}
+
+// 	// Подключаемся (используем новый API)
+// 	err = client.Start2(rtspURL.String())
+// 	if err != nil {
+// 		return fmt.Errorf("ошибка подключения к RTSP серверу: %v", err)
+// 	}
+// 	defer client.Close()
+
+// 	c.client = client
+
+// 	// Выполняем DESCRIBE для получения информации о потоках
+// 	session, _, err := client.Describe(rtspURL)
+// 	if err != nil {
+// 		return fmt.Errorf("ошибка выполнения DESCRIBE: %v", err)
+// 	}
+
+// 	log.Printf("Найдено медиа потоков: %d", len(session.Medias))
+
+// 	// Ищем видео медиа
+// 	var videoMedia *base.Media
+// 	var videoFormat format.Format
+	
+// 	for _, media := range session.Medias {
+// 		for _, forma := range media.Formats {
+// 			if _, ok := forma.(*format.H264); ok {
+// 				videoMedia = media
+// 				videoFormat = forma
+// 				log.Printf("Найден H.264 видео поток")
+// 				break
+// 			}
+// 		}
+// 		if videoMedia != nil {
+// 			break
+// 		}
+// 	}
+
+// 	if videoMedia == nil {
+// 		return fmt.Errorf("не найден H.264 видео поток")
+// 	}
+
+// 	// Выполняем SETUP для видео медиа
+// 	_, err = client.Setup(session.BaseURL, videoMedia, 0, 0)
+// 	if err != nil {
+// 		return fmt.Errorf("ошибка SETUP для видео потока: %v", err)
+// 	}
+
+// 	// Настраиваем обработчик пакетов
+// 	client.OnPacketRTP(videoMedia, videoFormat, func(pkt *rtp.Packet) {
+// 		c.handleRTPPacket(videoMedia, videoFormat, pkt)
+// 	})
+
+// 	// Запускаем обработку кадров в отдельной горутине
+// 	go c.processFrames(ctx)
+
+// 	// Выполняем PLAY
+// 	_, err = client.Play(nil)
+// 	if err != nil {
+// 		return fmt.Errorf("ошибка выполнения PLAY: %v", err)
+// 	}
+
+// 	log.Println("Начато воспроизведение RTSP потока")
+
+// 	// Ожидаем сигнал завершения
+// 	<-ctx.Done()
+// 	log.Println("Остановка камеры по сигналу...")
+
+// 	return nil
+// }
+
+// // parseRTSPURL парсит и подготавливает RTSP URL
+// func (c *Camera) parseRTSPURL() (*url.URL, error) {
+// 	rtspURL, err := url.Parse(c.config.RTSPUrl)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("неверный RTSP URL: %v", err)
+// 	}
+
+// 	// Добавляем аутентификацию если указана
+// 	if c.config.Username != "" {
+// 		if c.config.Password != "" {
+// 			rtspURL.User = url.UserPassword(c.config.Username, c.config.Password)
+// 		} else {
+// 			rtspURL.User = url.User(c.config.Username)
+// 		}
+// 	}
+
+// 	return rtspURL, nil
+// }
+
+// // maskURL маскирует пароль в URL для логирования
+// func (c *Camera) maskURL(url string) string {
+// 	// Простая маскировка для логов
+// 	if len(url) > 20 {
+// 		return url[:10] + "***" + url[len(url)-10:]
+// 	}
+// 	return "***"
+// }
+
+// // handleRTPPacket обрабатывает RTP пакет
+// func (c *Camera) handleRTPPacket(medi *base.Media, forma format.Format, pkt *rtp.Packet) {
+// 	c.frameNum++
+	
+// 	// Обрабатываем только каждый N-й кадр
+// 	if c.frameNum%c.config.FrameRate != 0 {
+// 		return
+// 	}
+
+// 	log.Printf("Получен RTP пакет #%d, размер: %d байт", c.frameNum, len(pkt.Payload))
+
+// 	// Отправляем пакет на обработку (пока просто логируем)
+// 	select {
+// 	case c.frames <- pkt.Payload:
+// 		// Пакет отправлен на обработку
+// 	default:
+// 		// Буфер полный, пропускаем кадр
+// 		log.Printf("Буфер кадров переполнен, пропускаем кадр #%d", c.frameNum)
+// 	}
+// }
+
+// // processFrames обрабатывает кадры в отдельной горутине
+// func (c *Camera) processFrames(ctx context.Context) {
+// 	log.Println("Запуск обработки кадров...")
+	
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			log.Println("Остановка обработки кадров...")
+// 			return
+// 		case frameData := <-c.frames:
+// 			if len(frameData) > 0 {
+// 				c.processFrameData(frameData)
+// 			}
+// 		}
+// 	}
+// }
+
+// // processFrameData обрабатывает данные кадра
+// func (c *Camera) processFrameData(data []byte) {
+// 	log.Printf("Обработка кадра размером: %d байт", len(data))
+
+// 	// TODO: Здесь будем декодировать H.264 в изображение
+// 	// Пока просто сохраняем информацию о кадре
+// 	if c.config.SaveFrames {
+// 		timestamp := time.Now().Format("2006-01-02_15-04-05")
+// 		filename := filepath.Join(c.config.OutputDir, fmt.Sprintf("frame_%s_%d.h264", timestamp, c.frameNum))
+		
+// 		// Простое сохранение в файл для отладки
+// 		// В реальности здесь нужно декодировать H.264
+// 		log.Printf("Кадр данные готовы для обработки: %s", filename)
+// 	}
+
+// 	// Здесь будем добавлять детекцию объектов позже
+// }
+
+// // Stop останавливает камеру
+// func (c *Camera) Stop() {
+// 	log.Println("Остановка камеры...")
+// 	if c.client != nil {
+// 		c.client.Close()
+// 	}
+// 	close(c.frames)
+// }
