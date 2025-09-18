@@ -23,6 +23,9 @@ type CameraConfig struct {
 
 // Load загружает конфигурацию из переменных окружения или использует значения по умолчанию
 func Load() (*Config, error) {
+	// Пытаемся загрузить .env файл
+	LoadEnvFile(".env")
+
 	cfg := &Config{
 		Camera: CameraConfig{
 			RTSPUrl:     getEnv("RTSP_URL", "rtsp://192.168.1.100:554/stream1"),

@@ -19,12 +19,32 @@ run: build
 # Запуск с переменными окружения
 run-dev: build
 	@echo "Запуск в режиме разработки..."
-	RTSP_URL="rtsp://192.168.1.100:554/stream1" \
-	CAMERA_USERNAME="admin" \
-	CAMERA_PASSWORD="your_password" \
-	SAVE_FRAMES=true \
-	OUTPUT_DIR="./output" \
+	@if [ -f .env ]; then \
+		echo "✅ Используется .env файл"; \
+	else \
+		echo "⚠️  .env файл не найден, используются значения по умолчанию"; \
+		echo "💡 Запустите 'make setup-env' для создания .env файла"; \
+	fi
 	./$(BINARY_NAME)
+
+# Создание .env файла из примера
+setup-env:
+	@if [ ! -f .env ]; then \
+		echo "# Camera Detection Project - Configuration" > .env; \
+		echo "# Отредактируйте значения под ваши настройки" >> .env; \
+		echo "" >> .env; \
+		echo "RTSP_URL=rtsp://192.168.1.100:554/stream1" >> .env; \
+		echo "CAMERA_USERNAME=admin" >> .env; \
+		echo "CAMERA_PASSWORD=your_camera_password" >> .env; \
+		echo "FRAME_RATE=5" >> .env; \
+		echo "SAVE_FRAMES=true" >> .env; \
+		echo "OUTPUT_DIR=./output" >> .env; \
+		echo "CAMERA_TIMEOUT=30" >> .env; \
+		echo "✅ Создан .env файл с настройками по умолчанию"; \
+		echo "📝 Отредактируйте .env файл с вашими реальными настройками"; \
+	else \
+		echo "⚠️  .env файл уже существует"; \
+	fi
 
 # Установка зависимостей (требует установленного OpenCV)
 install-deps:
@@ -79,6 +99,12 @@ setup:
 	mkdir -p internal/config
 	mkdir -p internal/detector
 	mkdir -p internal/storage
+	@if [ ! -f .env ]; then \
+		echo "📝 Создаю базовый .env файл..."; \
+		$(MAKE) setup-env; \
+	else \
+		echo "✅ .env файл уже существует"; \
+	fi
 
 # Проверка форматирования кода
 fmt:
@@ -106,7 +132,8 @@ help:
 	@echo "  test               - Запуск тестов"
 	@echo "  docker-build       - Сборка Docker образа"
 	@echo "  docker-run         - Запуск в Docker"
-	@echo "  setup              - Создание необходимых директорий"
+	  @echo "  setup              - Создание необходимых директорий"
+  @echo "  setup-env          - Создать .env файл из примера"
 	@echo "  fmt                - Форматирование кода"
 	@echo "  vet                - Проверка кода"
 	@echo "  check              - Все проверки (fmt + vet + test)"

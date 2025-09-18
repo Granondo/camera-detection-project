@@ -28,6 +28,9 @@ output/
 # Environment files
 .env
 .env.local
+.env.production
+.env.*.local
+*.env
 
 # IDE files
 .vscode/
