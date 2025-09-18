@@ -161,7 +161,7 @@ docker run --rm \
   -e CAMERA_USERNAME="admin" \
   -e CAMERA_PASSWORD="password" \
   -v $(pwd)/output:/app/output \
-  tapo-surveillance:latest
+  camera-detection-project:latest
 ```
 
 ## Разработка
