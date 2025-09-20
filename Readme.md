@@ -56,15 +56,7 @@ make install-deps
 
 ### 3. Конфигурация
 
-Создайте файл `.env` или установите переменные окружения:
-
-```bash
-export RTSP_URL="rtsp://192.168.1.100:554/stream1"
-export CAMERA_USERNAME="admin"
-export CAMERA_PASSWORD="your_password"
-export SAVE_FRAMES=true
-export OUTPUT_DIR="./output"
-```
+Создайте файл `.env` и установите переменные окружения
 
 ### 4. Запуск
 

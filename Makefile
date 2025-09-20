@@ -1,6 +1,6 @@
 # Makefile для Camera Detection Project
 
-.PHONY: build run clean test docker-build docker-run install-deps
+.PHONY: build run clean test docker-build docker-run install-deps setup setup-env fmt vet check help
 
 # Переменные
 BINARY_NAME=camera-detection-project
@@ -27,41 +27,11 @@ run-dev: build
 	fi
 	./$(BINARY_NAME)
 
-# Создание .env файла из примера
-setup-env:
-	@if [ ! -f .env ]; then \
-		echo "# Camera Detection Project - Configuration" > .env; \
-		echo "# Отредактируйте значения под ваши настройки" >> .env; \
-		echo "" >> .env; \
-		echo "RTSP_URL=rtsp://192.168.1.100:554/stream1" >> .env; \
-		echo "CAMERA_USERNAME=admin" >> .env; \
-		echo "CAMERA_PASSWORD=your_camera_password" >> .env; \
-		echo "FRAME_RATE=5" >> .env; \
-		echo "SAVE_FRAMES=true" >> .env; \
-		echo "OUTPUT_DIR=./output" >> .env; \
-		echo "CAMERA_TIMEOUT=30" >> .env; \
-		echo "✅ Создан .env файл с настройками по умолчанию"; \
-		echo "📝 Отредактируйте .env файл с вашими реальными настройками"; \
-	else \
-		echo "⚠️  .env файл уже существует"; \
-	fi
-
 # Установка зависимостей (требует установленного OpenCV)
 install-deps:
 	@echo "Установка Go зависимостей..."
 	go mod download
 	go mod tidy
-
-# Установка OpenCV (Ubuntu/Debian)
-install-opencv:
-	@echo "Установка OpenCV..."
-	sudo apt update
-	sudo apt install -y libopencv-dev
-
-# Установка OpenCV (macOS)
-install-opencv-mac:
-	@echo "Установка OpenCV на macOS..."
-	brew install opencv
 
 # Очистка
 clean:
@@ -90,22 +60,6 @@ docker-run: docker-build
 		-v $(PWD)/output:/app/output \
 		$(DOCKER_IMAGE)
 
-# Создание директорий
-setup:
-	@echo "Создание необходимых директорий..."
-	mkdir -p output
-	mkdir -p cmd/server
-	mkdir -p internal/camera
-	mkdir -p internal/config
-	mkdir -p internal/detector
-	mkdir -p internal/storage
-	@if [ ! -f .env ]; then \
-		echo "📝 Создаю базовый .env файл..."; \
-		$(MAKE) setup-env; \
-	else \
-		echo "✅ .env файл уже существует"; \
-	fi
-
 # Проверка форматирования кода
 fmt:
 	@echo "Форматирование кода..."
@@ -132,8 +86,8 @@ help:
 	@echo "  test               - Запуск тестов"
 	@echo "  docker-build       - Сборка Docker образа"
 	@echo "  docker-run         - Запуск в Docker"
-	  @echo "  setup              - Создание необходимых директорий"
-  @echo "  setup-env          - Создать .env файл из примера"
+	@echo "  setup              - Создание необходимых директорий"
+	@echo "  setup-env          - Создать .env файл"
 	@echo "  fmt                - Форматирование кода"
 	@echo "  vet                - Проверка кода"
 	@echo "  check              - Все проверки (fmt + vet + test)"
