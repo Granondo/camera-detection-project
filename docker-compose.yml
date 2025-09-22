@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  camera-detection:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: camera-detection
+    environment:
+      - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream1}
+      - CAMERA_USERNAME=${CAMERA_USERNAME:-admin}
+      - CAMERA_PASSWORD=${CAMERA_PASSWORD}
+      - CAMERA_TIMEOUT=${CAMERA_TIMEOUT:-30}
+      - FRAME_RATE=${FRAME_RATE:-5}
+      - SAVE_FRAMES=${SAVE_FRAMES:-true}
+      - OUTPUT_DIR=/app/output
+      - FFMPEG_PATH=ffmpeg
+      - DETECTION_ENABLED=${DETECTION_ENABLED:-true}
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: unless-stopped
+    network_mode: host  # For easier RTSP access
+    
+    # Alternative network configuration if you prefer bridge mode:
+    # ports:
+    #   - "8080:8080"
+    # networks:
+    #   - camera-network
+
+  # Optional: Add a web interface in the future
+  # web-interface:
+  #   build:
+  #     context: ./web
+  #     dockerfile: Dockerfile
+  #   container_name: camera-web
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - camera-detection
+  #   networks:
+  #     - camera-network
+
+# networks:
+#   camera-network:
+#     driver: bridge
+
+volumes:
+  camera_output:
+  camera_logs:

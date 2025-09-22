@@ -1,35 +1,58 @@
-# Используем официальный Go образ с OpenCV
-FROM gocv/opencv:4.8.0-ubuntu
+FROM golang:1.21-alpine AS builder
 
-# Устанавливаем рабочую директорию
+# Install FFmpeg and build dependencies
+RUN apk add --no-cache \
+    ffmpeg \
+    gcc \
+    musl-dev \
+    git
+
 WORKDIR /app
 
-# Копируем go mod файлы
+# Copy go mod files
 COPY go.mod go.sum ./
-
-# Скачиваем зависимости
 RUN go mod download
 
-# Копируем исходный код
+# Copy source code
 COPY . .
 
-# Создаем директорию для вывода
-RUN mkdir -p /app/output
+# Build the application
+RUN go build -o camera-detection cmd/server/main.go
 
-# Собираем приложение
-RUN go build -o main ./cmd/server
+# Final stage
+FROM alpine:latest
 
-# Создаем пользователя для безопасности
-RUN useradd -u 1001 appuser
+# Install FFmpeg runtime
+RUN apk add --no-cache ffmpeg
 
-# Меняем владельца файлов
-RUN chown -R appuser:appuser /app
+# Create app user
+RUN addgroup -g 1000 appgroup && \
+    adduser -u 1000 -G appgroup -s /bin/sh -D appuser
 
-# Переключаемся на созданного пользователя
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /app/camera-detection .
+
+# Create directories and set permissions
+RUN mkdir -p output logs && \
+    chown -R appuser:appgroup /app
+
+# Switch to non-root user
 USER appuser
 
-# Открываем порт (если понадобится веб-интерфейс)
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD pgrep camera-detection || exit 1
+
+# Default environment variables
+ENV RTSP_URL=rtsp://192.168.1.100:554/stream1
+ENV CAMERA_USERNAME=admin
+ENV CAMERA_PASSWORD=""
+ENV SAVE_FRAMES=true
+ENV OUTPUT_DIR=/app/output
+ENV DETECTION_ENABLED=true
+
 EXPOSE 8080
 
-# Запускаем приложение
-CMD ["./main"]
+CMD ["./camera-detection"]
