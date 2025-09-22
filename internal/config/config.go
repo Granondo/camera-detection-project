@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +21,9 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	// Try to load .env file if it exists
+	loadEnvFile()
+
 	cfg := &Config{
 		RTSPURL:         getEnv("RTSP_URL", "rtsp://192.168.1.100:554/stream1"),
 		Username:        getEnv("CAMERA_USERNAME", "admin"),
@@ -37,6 +42,37 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// loadEnvFile loads .env file if it exists
+func loadEnvFile() {
+	file, err := os.Open(".env")
+	if err != nil {
+		return // .env file doesn't exist, skip
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		// Parse KEY=VALUE
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			
+			// Set environment variable only if not already set
+			if os.Getenv(key) == "" {
+				os.Setenv(key, value)
+			}
+		}
+	}
 }
 
 func getEnv(key, defaultValue string) string {
