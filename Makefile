@@ -47,10 +47,6 @@ run-dev: ## Run in development mode
 	@echo "Running in development mode..."
 	go run cmd/server/main.go
 
-run-simple: ## Run with simple camera mode
-	@echo "Running simple camera test..."
-	DETECTION_ENABLED=false go run cmd/server/main.go
-
 test: ## Run tests
 	go test ./...
 
@@ -120,28 +116,87 @@ logs: ## Show recent logs
 		echo "No log directory found"; \
 	fi
 
-env-example: ## Create .env example file
-	@echo "Creating .env.example file..."
-	@echo "# RTSP Configuration" > .env.example
-	@echo "RTSP_URL=rtsp://192.168.1.100:554/stream1" >> .env.example
-	@echo "CAMERA_USERNAME=admin" >> .env.example
-	@echo "CAMERA_PASSWORD=your_password" >> .env.example
-	@echo "" >> .env.example
-	@echo "# Processing Configuration" >> .env.example
-	@echo "CAMERA_TIMEOUT=30" >> .env.example
-	@echo "FRAME_RATE=5" >> .env.example
-	@echo "SAVE_FRAMES=true" >> .env.example
-	@echo "OUTPUT_DIR=./output" >> .env.example
-	@echo "" >> .env.example
-	@echo "# FFmpeg Configuration" >> .env.example
-	@echo "FFMPEG_PATH=ffmpeg" >> .env.example
-	@echo "DETECTION_ENABLED=true" >> .env.example
-	@echo ".env.example created successfully!"
-
 install: setup install-deps ## Complete installation
 	@echo "Installation completed!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Copy .env.example to .env and configure your camera settings"
-	@echo "2. Run 'make test-connection' to test your RTSP connection"
-	@echo "3. Run 'make run' to start the application"
+	@if [ ! -f .env ]; then \
+		echo "1. Create .env file with your camera and database settings:"; \
+		echo "   cp .env.example .env  # or create manually"; \
+		echo "   Edit .env with your camera IP, credentials, and database settings"; \
+	else \
+		echo "1. ✅ .env file already exists"; \
+	fi
+	@echo "2. Run 'make db-start' to start PostgreSQL"
+	@echo "3. Run 'make db-migrate' to create database tables"
+	@echo "4. Run 'make test-connection' to test your RTSP connection"
+	@echo "5. Run 'make run' to start the application"
+
+check-env: ## Check if .env file exists
+	@if [ ! -f .env ]; then \
+		echo "❌ .env file not found!"; \
+		echo ""; \
+		echo "Please create .env file with the following variables:"; \
+		echo ""; \
+		echo "# Camera Configuration"; \
+		echo "RTSP_URL=rtsp://192.168.1.71:554/stream1"; \
+		echo "CAMERA_USERNAME=your_email@gmail.com"; \
+		echo "CAMERA_PASSWORD=your_password"; \
+		echo ""; \
+		echo "# Processing Configuration"; \
+		echo "CAMERA_TIMEOUT=30"; \
+		echo "FRAME_RATE=5"; \
+		echo "SAVE_FRAMES=true"; \
+		echo "OUTPUT_DIR=./output"; \
+		echo ""; \
+		echo "# FFmpeg Configuration"; \
+		echo "FFMPEG_PATH=ffmpeg"; \
+		echo "DETECTION_ENABLED=true"; \
+		echo ""; \
+		echo "# Database Configuration"; \
+		echo "DATABASE_HOST=localhost"; \
+		echo "DATABASE_PORT=5432"; \
+		echo "DATABASE_USER=postgres"; \
+		echo "DATABASE_PASSWORD=postgres"; \
+		echo "DATABASE_NAME=surveillance"; \
+		echo "DATABASE_SSL_MODE=disable"; \
+		echo ""; \
+		exit 1; \
+	else \
+		echo "✅ .env file exists"; \
+	fi
+
+# Database commands
+db-start: ## Start PostgreSQL with Docker Compose
+	@echo "Starting PostgreSQL database..."
+	docker-compose up -d postgres
+
+db-stop: ## Stop PostgreSQL
+	@echo "Stopping PostgreSQL database..."
+	docker-compose stop postgres
+
+db-migrate: ## Run database migrations (create tables)
+	@echo "Creating database tables..."
+	go run cmd/migrate/main.go
+
+db-reset: ## Reset database (WARNING: destroys all data)
+	@echo "WARNING: This will destroy all data!"
+	@echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
+	@sleep 5
+	docker-compose down postgres
+	docker volume rm $(docker volume ls -q | grep postgres) 2>/dev/null || true
+	docker-compose up -d postgres
+	@sleep 5
+	make db-migrate
+
+db-stats: ## Show database statistics
+	@echo "Database statistics:"
+	go run cmd/db-stats/main.go
+
+db-shell: ## Open PostgreSQL shell
+	docker-compose exec postgres psql -U postgres -d surveillance
+
+pgadmin: ## Start pgAdmin web interface
+	@echo "Starting pgAdmin..."
+	docker-compose up -d pgadmin
+	@echo "pgAdmin available at: http://localhost:8080"

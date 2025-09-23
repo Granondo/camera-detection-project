@@ -1,12 +1,33 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: surveillance-postgres
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-surveillance}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d/
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
+  # Camera Detection Application
   camera-detection:
     build: 
       context: .
       dockerfile: Dockerfile
     container_name: camera-detection
+    depends_on:
+      - postgres
     environment:
+      # Camera Configuration
       - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream1}
       - CAMERA_USERNAME=${CAMERA_USERNAME:-admin}
       - CAMERA_PASSWORD=${CAMERA_PASSWORD}
@@ -16,35 +37,52 @@ services:
       - OUTPUT_DIR=/app/output
       - FFMPEG_PATH=ffmpeg
       - DETECTION_ENABLED=${DETECTION_ENABLED:-true}
+      
+      # Database Configuration
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-surveillance}
+      - DATABASE_SSL_MODE=disable
     volumes:
       - ./output:/app/output
       - ./logs:/app/logs
     restart: unless-stopped
     network_mode: host  # For easier RTSP access
-    
-    # Alternative network configuration if you prefer bridge mode:
-    # ports:
-    #   - "8080:8080"
+    # Alternative: use bridge network if you prefer
     # networks:
-    #   - camera-network
+    #   - surveillance-network
+    #   ports:
+    #     - "8080:8080"
 
-  # Optional: Add a web interface in the future
-  # web-interface:
-  #   build:
-  #     context: ./web
-  #     dockerfile: Dockerfile
-  #   container_name: camera-web
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - camera-detection
-  #   networks:
-  #     - camera-network
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: surveillance-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@surveillance.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+    networks:
+      - surveillance-network
 
-# networks:
-#   camera-network:
-#     driver: bridge
+networks:
+  surveillance-network:
+    driver: bridge
 
 volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
   camera_output:
+    driver: local
   camera_logs:
+    driver: local

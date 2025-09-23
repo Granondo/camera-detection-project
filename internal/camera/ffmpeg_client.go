@@ -1,10 +1,10 @@
 package camera
 
 import (
-	"io"
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"path/filepath"
@@ -12,18 +12,32 @@ import (
 	"time"
 
 	"camera-detection-project/internal/config"
+	"camera-detection-project/internal/storage"
 )
 
 type FFmpegClient struct {
-	config     *config.Config
-	cmd        *exec.Cmd
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	frameCount int
-	mu         sync.Mutex
+	config         *config.Config
+	cmd            *exec.Cmd
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	frameCount     int
+	mu             sync.Mutex
+	storageService StorageService
+	currentRecording *storage.Recording
 }
 
+// StorageService interface to work with storage package
+type StorageService interface {
+	StartRecording(filePath string) (*storage.Recording, error)
+	FinishRecording(recordingID int, filePath string) error
+	SaveFrame(filePath string, recordingID *int) (*storage.Frame, error)
+	UpdateFrameProcessed(frameID int, hasDetection bool, thumbnailPath *string) error
+	CreateEvent(eventType, severity, title, message string, metadata *string) error
+	UpdateCameraStatus(status string) error
+}
+
+// NewFFmpegClient creates a new FFmpeg client without storage
 func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	
@@ -36,8 +50,36 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	return client, nil
 }
 
+// NewFFmpegClientWithStorage creates a new FFmpeg client with storage integration
+func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FFmpegClient, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	client := &FFmpegClient{
+		config:         cfg,
+		ctx:            ctx,
+		cancel:         cancel,
+		storageService: storage,
+	}
+
+	return client, nil
+}
+
 func (c *FFmpegClient) Start() error {
-	log.Println("Starting FFmpeg video capture...")
+	log.Println("🎬 Starting FFmpeg video capture...")
+
+	// Create recording record if storage is available
+	if c.storageService != nil {
+		timestamp := time.Now().Format("20060102_150405")
+		recordingPath := filepath.Join(c.config.OutputDir, fmt.Sprintf("recording_%s.mp4", timestamp))
+		
+		recording, err := c.storageService.StartRecording(recordingPath)
+		if err != nil {
+			log.Printf("⚠️  Warning: Could not create recording record: %v", err)
+		} else {
+			c.currentRecording = recording
+			log.Printf("📹 Started recording (ID: %d): %s", recording.ID, recordingPath)
+		}
+	}
 
 	// Build FFmpeg command for RTSP stream processing
 	args := c.buildFFmpegArgs()
@@ -72,7 +114,7 @@ func (c *FFmpegClient) Start() error {
 		go c.processFrames()
 	}
 
-	log.Println("FFmpeg client started successfully")
+	log.Println("✅ FFmpeg client started successfully")
 	return nil
 }
 
@@ -87,6 +129,7 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 			c.config.RTSPURL[7:]) // Remove "rtsp://" prefix
 	}
 
+	timestamp := time.Now().Format("20060102_150405")
 	args := []string{
 		"-rtsp_transport", "tcp",  // Use TCP for RTSP (more reliable)
 		"-i", rtspURL,
@@ -97,7 +140,7 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 		"-segment_time", "60",     // 60 second segments
 		"-segment_format", "mp4",  // Segment format
 		"-strftime", "1",          // Enable strftime in filename
-		filepath.Join(c.config.OutputDir, "recording_%Y%m%d_%H%M%S.mp4"),
+		filepath.Join(c.config.OutputDir, fmt.Sprintf("recording_%s_%%Y%%m%%d_%%H%%M%%S.mp4", timestamp)),
 	}
 
 	// Add frame extraction for detection if needed
@@ -106,7 +149,7 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 			"-vf", fmt.Sprintf("fps=1/%d", c.config.FrameRate), // Extract frame every N seconds
 			"-f", "image2",
 			"-strftime", "1",
-			filepath.Join(c.config.OutputDir, "frame_%Y%m%d_%H%M%S.jpg"),
+			filepath.Join(c.config.OutputDir, fmt.Sprintf("frame_%s_%%Y%%m%%d_%%H%%M%%S.jpg", timestamp)),
 		}
 		args = append(args, frameArgs...)
 	}
@@ -117,7 +160,6 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 func (c *FFmpegClient) monitorOutput(pipe io.ReadCloser, name string) {
 	defer c.wg.Done()
 	defer pipe.Close()
-
 	
 	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
@@ -127,11 +169,29 @@ func (c *FFmpegClient) monitorOutput(pipe io.ReadCloser, name string) {
 		default:
 			line := scanner.Text()
 			log.Printf("[FFmpeg %s]: %s", name, line)
+			
+			// Create error events for important FFmpeg errors
+			if c.storageService != nil && name == "STDERR" {
+				c.handleFFmpegError(line)
+			}
 		}
 	}
 	
 	if err := scanner.Err(); err != nil {
 		log.Printf("Error reading %s: %v", name, err)
+	}
+}
+
+func (c *FFmpegClient) handleFFmpegError(line string) {
+	// Check for critical errors and create events
+	if contains := []string{"Connection refused", "timeout", "No route to host"}; containsAny(line, contains) {
+		c.storageService.CreateEvent(
+			"camera_error",
+			"high",
+			"Camera Connection Error",
+			fmt.Sprintf("FFmpeg error: %s", line),
+			nil,
+		)
 	}
 }
 
@@ -151,29 +211,88 @@ func (c *FFmpegClient) processFrames() {
 			frameNum := c.frameCount
 			c.mu.Unlock()
 			
-			log.Printf("Processing frame #%d", frameNum)
+			log.Printf("🖼️  Processing frame #%d", frameNum)
 			
-			// Here you can add detection logic
-			// For now, just log that we're processing
-			if c.config.DetectionEnabled {
-				c.detectObjects()
+			// Extract frame path (this is simplified - in reality you'd track the actual files)
+			timestamp := time.Now().Format("20060102_150405")
+			framePath := filepath.Join(c.config.OutputDir, fmt.Sprintf("frame_%s.jpg", timestamp))
+			
+			// Save frame to database if storage is available
+			if c.storageService != nil {
+				var recordingID *int
+				if c.currentRecording != nil {
+					recordingID = &c.currentRecording.ID
+				}
+				
+				frame, err := c.storageService.SaveFrame(framePath, recordingID)
+				if err != nil {
+					log.Printf("⚠️  Warning: Could not save frame to database: %v", err)
+				} else {
+					log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
+				}
+				
+				// Run detection if enabled
+				if c.config.DetectionEnabled {
+					hasDetection := c.detectObjects(framePath, frameNum)
+					
+					// Update frame with detection results
+					if frame != nil {
+						if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
+							log.Printf("⚠️  Warning: Could not update frame processed status: %v", err)
+						}
+					}
+				}
+			} else {
+				// Fallback to old behavior without storage
+				if c.config.DetectionEnabled {
+					c.detectObjects(framePath, frameNum)
+				}
 			}
 		}
 	}
 }
 
-func (c *FFmpegClient) detectObjects() {
+func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 	// Placeholder for object detection logic
-	// This can be extended with YOLO, TensorFlow, or other detection models
-	log.Println("Running object detection...")
+	log.Printf("🔍 Running object detection on frame #%d...", frameNum)
 	
-	// Example: You could call external detection tools or APIs here
-	// For now, just simulate detection
+	// Simulate detection processing
 	time.Sleep(100 * time.Millisecond)
+	
+	// Simulate random detection (for testing)
+	hasDetection := (frameNum%10 == 0) // Every 10th frame has detection
+	
+	if hasDetection {
+		log.Printf("👤 Detection found in frame #%d!", frameNum)
+		
+		// Create detection event if storage is available
+		if c.storageService != nil {
+			c.storageService.CreateEvent(
+				"person_detected",
+				"medium",
+				"Person Detected",
+				fmt.Sprintf("Person detected in frame #%d at %s", frameNum, framePath),
+				nil,
+			)
+		}
+	}
+	
+	return hasDetection
 }
 
 func (c *FFmpegClient) Stop() {
-	log.Println("Stopping FFmpeg client...")
+	log.Println("🛑 Stopping FFmpeg client...")
+	
+	// Finish current recording if storage is available
+	if c.storageService != nil && c.currentRecording != nil {
+		// In a real implementation, you'd track the actual file path
+		recordingPath := filepath.Join(c.config.OutputDir, fmt.Sprintf("recording_%d.mp4", c.currentRecording.ID))
+		if err := c.storageService.FinishRecording(c.currentRecording.ID, recordingPath); err != nil {
+			log.Printf("⚠️  Warning: Could not finish recording: %v", err)
+		} else {
+			log.Printf("✅ Finished recording (ID: %d)", c.currentRecording.ID)
+		}
+	}
 	
 	if c.cancel != nil {
 		c.cancel()
@@ -184,10 +303,24 @@ func (c *FFmpegClient) Stop() {
 	}
 	
 	c.wg.Wait()
-	log.Println("FFmpeg client stopped")
+	log.Println("✅ FFmpeg client stopped")
 }
 
 func (c *FFmpegClient) Close() error {
 	c.Stop()
 	return nil
+}
+
+// Helper functions
+func containsAny(str string, substrings []string) bool {
+	for _, substring := range substrings {
+		if len(str) >= len(substring) {
+			for i := 0; i <= len(str)-len(substring); i++ {
+				if str[i:i+len(substring)] == substring {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

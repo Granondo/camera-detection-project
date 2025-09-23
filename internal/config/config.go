@@ -10,15 +10,24 @@ import (
 )
 
 type Config struct {
-	RTSPURL          string
-	Username         string
-	Password         string
-	CameraTimeout    time.Duration
-	FrameRate        int
-	SaveFrames       bool
-	OutputDir        string
-	FFmpegPath       string
+	// Camera settings
+	RTSPURL         string
+	Username        string
+	Password        string
+	CameraTimeout   time.Duration
+	FrameRate       int
+	SaveFrames      bool
+	OutputDir       string
+	FFmpegPath      string
 	DetectionEnabled bool
+	
+	// Database settings
+	DatabaseHost     string
+	DatabasePort     int
+	DatabaseUser     string
+	DatabasePassword string
+	DatabaseName     string
+	DatabaseSSLMode  string
 }
 
 func Load() (*Config, error) {
@@ -26,6 +35,7 @@ func Load() (*Config, error) {
 	loadEnvFile()
 
 	cfg := &Config{
+		// Camera configuration
 		RTSPURL:          getEnv("RTSP_URL", "rtsp://192.168.1.100:554/stream1"),
 		Username:         getEnv("CAMERA_USERNAME", "admin"),
 		Password:         getEnv("CAMERA_PASSWORD", ""),
@@ -35,6 +45,14 @@ func Load() (*Config, error) {
 		OutputDir:        getEnv("OUTPUT_DIR", "./output"),
 		FFmpegPath:       getEnv("FFMPEG_PATH", "ffmpeg"),
 		DetectionEnabled: getBoolEnv("DETECTION_ENABLED", true),
+
+		// Database configuration
+		DatabaseHost:     getEnv("DATABASE_HOST", "localhost"),
+		DatabasePort:     getIntEnv("DATABASE_PORT", 5432),
+		DatabaseUser:     getEnv("DATABASE_USER", "postgres"),
+		DatabasePassword: getEnv("DATABASE_PASSWORD", "postgres"),
+		DatabaseName:     getEnv("DATABASE_NAME", "surveillance"),
+		DatabaseSSLMode:  getEnv("DATABASE_SSL_MODE", "disable"),
 	}
 
 	// Create output directory if it doesn't exist
