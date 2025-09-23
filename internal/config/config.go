@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"bufio"
 	"os"
 	"strconv"
@@ -9,14 +10,14 @@ import (
 )
 
 type Config struct {
-	RTSPURL         string
-	Username        string
-	Password        string
-	CameraTimeout   time.Duration
-	FrameRate       int
-	SaveFrames      bool
-	OutputDir       string
-	FFmpegPath      string
+	RTSPURL          string
+	Username         string
+	Password         string
+	CameraTimeout    time.Duration
+	FrameRate        int
+	SaveFrames       bool
+	OutputDir        string
+	FFmpegPath       string
 	DetectionEnabled bool
 }
 
@@ -25,14 +26,14 @@ func Load() (*Config, error) {
 	loadEnvFile()
 
 	cfg := &Config{
-		RTSPURL:         getEnv("RTSP_URL", "rtsp://192.168.1.100:554/stream1"),
-		Username:        getEnv("CAMERA_USERNAME", "admin"),
-		Password:        getEnv("CAMERA_PASSWORD", ""),
-		CameraTimeout:   getDurationEnv("CAMERA_TIMEOUT", 30*time.Second),
-		FrameRate:       getIntEnv("FRAME_RATE", 5),
-		SaveFrames:      getBoolEnv("SAVE_FRAMES", true),
-		OutputDir:       getEnv("OUTPUT_DIR", "./output"),
-		FFmpegPath:      getEnv("FFMPEG_PATH", "ffmpeg"),
+		RTSPURL:          getEnv("RTSP_URL", "rtsp://192.168.1.100:554/stream1"),
+		Username:         getEnv("CAMERA_USERNAME", "admin"),
+		Password:         getEnv("CAMERA_PASSWORD", ""),
+		CameraTimeout:    getDurationEnv("CAMERA_TIMEOUT", 30*time.Second),
+		FrameRate:        getIntEnv("FRAME_RATE", 5),
+		SaveFrames:       getBoolEnv("SAVE_FRAMES", true),
+		OutputDir:        getEnv("OUTPUT_DIR", "./output"),
+		FFmpegPath:       getEnv("FFMPEG_PATH", "ffmpeg"),
 		DetectionEnabled: getBoolEnv("DETECTION_ENABLED", true),
 	}
 
@@ -55,21 +56,26 @@ func loadEnvFile() {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Parse KEY=VALUE
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			
+
 			// Set environment variable only if not already set
 			if os.Getenv(key) == "" {
 				os.Setenv(key, value)
+				displayValue := value
+				if strings.Contains(strings.ToLower(key), "password") {
+					displayValue = maskValue(value)
+				}
+				log.Printf("📝 Загружен %s = %s", key, displayValue)
 			}
 		}
 	}
@@ -107,4 +113,11 @@ func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+func maskValue(value string) string {
+	if value == "" {
+		return "(пустое)"
+	}
+	return value[:1] + "***" + value[len(value)-1:]
 }
