@@ -37,11 +37,11 @@ install-ffmpeg-mac: ## Install FFmpeg on macOS
 
 build: ## Build the application
 	@echo "Building camera detection service..."
-	go build -o bin/camera-detection cmd/server/main.go
+	go build -o camera-detection cmd/server/main.go
 
 run: build ## Run the application
 	@echo "Starting camera detection service..."
-	./bin/camera-detection
+	./camera-detection
 
 run-dev: ## Run in development mode
 	@echo "Running in development mode..."
@@ -62,7 +62,7 @@ check: ## Run code quality checks
 
 clean: ## Clean build artifacts and output
 	@echo "Cleaning up..."
-	rm -rf bin/
+	rm -f camera-detection
 	rm -rf output/*.mp4
 	rm -rf output/*.jpg
 	rm -rf logs/*
@@ -70,21 +70,27 @@ clean: ## Clean build artifacts and output
 
 test-connection: ## Test RTSP connection
 	@echo "Testing RTSP connection..."
-	@if [ -z "$$RTSP_URL" ]; then \
+	@if [ -z "$RTSP_URL" ]; then \
 		echo "Please set RTSP_URL environment variable"; \
 		echo "Example: export RTSP_URL='rtsp://admin:password@192.168.1.100:554/stream1'"; \
 		exit 1; \
 	fi
-	ffprobe -rtsp_transport tcp -i "$$RTSP_URL" -t 1 -f null -
+	ffprobe -rtsp_transport tcp -i "$RTSP_URL" -t 1 -f null -
+
+quick-test: ## Quick camera functionality test
+	@echo "Running quick camera test..."
+	go run -ldflags="-X main.mode=test" cmd/server/main.go || \
+	go run cmd/test-camera/main.go 2>/dev/null || \
+	echo "Quick test requires .env file with camera configuration"
 
 capture-frame: ## Capture a single frame for testing
 	@echo "Capturing test frame..."
-	@if [ -z "$$RTSP_URL" ]; then \
+	@if [ -z "$RTSP_URL" ]; then \
 		echo "Please set RTSP_URL environment variable"; \
 		exit 1; \
 	fi
 	mkdir -p output
-	ffmpeg -rtsp_transport tcp -i "$$RTSP_URL" -vframes 1 -q:v 2 -y output/test_frame.jpg
+	ffmpeg -rtsp_transport tcp -i "$RTSP_URL" -vframes 1 -q:v 2 -y output/test_frame.jpg
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
