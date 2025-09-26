@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
 )
@@ -111,7 +113,7 @@ func (c *FFmpegClient) Start() error {
 	// Start frame processing if detection is enabled
 	if c.config.DetectionEnabled {
 		c.wg.Add(1)
-		go c.processFrames()
+		go c.watchFrames()
 	}
 
 	log.Println("✅ FFmpeg client started successfully")
@@ -195,61 +197,87 @@ func (c *FFmpegClient) handleFFmpegError(line string) {
 	}
 }
 
-func (c *FFmpegClient) processFrames() {
-	defer c.wg.Done()
-	
-	ticker := time.NewTicker(time.Duration(c.config.FrameRate) * time.Second)
-	defer ticker.Stop()
+func (c *FFmpegClient) watchFrames() {
+    defer c.wg.Done()
+    
+    watcher, err := fsnotify.NewWatcher()
+    if err != nil {
+        log.Printf("❌ Failed to create file watcher: %v", err)
+        return
+    }
+    defer watcher.Close()
+    
+    // Следить за папкой output
+    err = watcher.Add(c.config.OutputDir)
+    if err != nil {
+        log.Printf("❌ Failed to watch directory: %v", err)
+        return
+    }
+    
+    log.Printf("👁️ Watching for new frames in: %s", c.config.OutputDir)
+    
+    for {
+        select {
+        case <-c.ctx.Done():
+            return
+        case event, ok := <-watcher.Events:
+            if !ok {
+                return
+            }
+            
+            // Обработка только создания .jpg файлов
+            if event.Op&fsnotify.Create == fsnotify.Create && 
+               strings.HasSuffix(event.Name, ".jpg") &&
+               strings.Contains(event.Name, "frame_") {
+                
+                c.handleNewFrame(event.Name)
+            }
+            
+        case err, ok := <-watcher.Errors:
+            if !ok {
+                return
+            }
+            log.Printf("⚠️ File watcher error: %v", err)
+        }
+    }
+}
 
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-ticker.C:
-			c.mu.Lock()
-			c.frameCount++
-			frameNum := c.frameCount
-			c.mu.Unlock()
-			
-			log.Printf("🖼️  Processing frame #%d", frameNum)
-			
-			// Extract frame path (this is simplified - in reality you'd track the actual files)
-			timestamp := time.Now().Format("20060102_150405")
-			framePath := filepath.Join(c.config.OutputDir, fmt.Sprintf("frame_%s.jpg", timestamp))
-			
-			// Save frame to database if storage is available
-			if c.storageService != nil {
-				var recordingID *int
-				if c.currentRecording != nil {
-					recordingID = &c.currentRecording.ID
-				}
-				
-				frame, err := c.storageService.SaveFrame(framePath, recordingID)
-				if err != nil {
-					log.Printf("⚠️  Warning: Could not save frame to database: %v", err)
-				} else {
-					log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
-				}
-				
-				// Run detection if enabled
-				if c.config.DetectionEnabled {
-					hasDetection := c.detectObjects(framePath, frameNum)
-					
-					// Update frame with detection results
-					if frame != nil {
-						if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
-							log.Printf("⚠️  Warning: Could not update frame processed status: %v", err)
-						}
-					}
-				}
-			} else {
-				// Fallback to old behavior without storage
-				if c.config.DetectionEnabled {
-					c.detectObjects(framePath, frameNum)
-				}
-			}
-		}
-	}
+func (c *FFmpegClient) handleNewFrame(framePath string) {
+    log.Printf("🖼️ New frame detected: %s", filepath.Base(framePath))
+    
+    // Небольшая задержка чтобы файл полностью записался
+    time.Sleep(100 * time.Millisecond)
+    
+    // Сохранить в базу данных
+    if c.storageService != nil {
+        var recordingID *int
+        if c.currentRecording != nil {
+            recordingID = &c.currentRecording.ID
+        }
+        
+        frame, err := c.storageService.SaveFrame(framePath, recordingID)
+        if err != nil {
+            log.Printf("⚠️ Warning: Could not save frame to database: %v", err)
+            return
+        }
+        
+        log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
+        
+        // Запустить детекцию если включена
+        if c.config.DetectionEnabled {
+            c.mu.Lock()
+            c.frameCount++
+            frameNum := c.frameCount
+            c.mu.Unlock()
+            
+            hasDetection := c.detectObjects(framePath, frameNum)
+            
+            // Обновить результаты детекции
+            if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
+                log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
+            }
+        }
+    }
 }
 
 func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
