@@ -166,12 +166,10 @@ def model_info():
         'available_classes': list(detector.model.names.values()) if detector.model else []
     })
 
+initialize_detector()
+
 if __name__ == '__main__':
-    initialize_detector()
-    
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 5000))
-    debug = os.getenv('DEBUG', 'False').lower() == 'true'
-    
-    logger.info(f"🌟 Starting YOLO Detection Service on {host}:{port}")
-    app.run(host=host, port=port, debug=debug)
+    logger.info(f"🌟 Starting YOLO Detection Service (DEV MODE) on {host}:{port}")
+    app.run(host=host, port=port, debug=True)

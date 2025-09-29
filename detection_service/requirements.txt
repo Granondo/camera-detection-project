@@ -6,3 +6,4 @@ opencv-python-headless==4.8.1.78
 requests==2.31.0
 torch==2.0.1
 torchvision==0.15.2
+gunicorn==21.2.0
