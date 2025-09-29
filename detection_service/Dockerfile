@@ -29,5 +29,5 @@ ENV DISPLAY=:99
 
 EXPOSE 5000
 
-# Заменяем CMD на gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--preload", "main:app"]
+# Один worker, увеличенный timeout для CPU
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "300", "--worker-class", "sync", "main:app"]

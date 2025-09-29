@@ -9,7 +9,6 @@ import logging
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
 import numpy as np
-from pathlib import Path
 import time
 
 # Настройка логирования
@@ -20,9 +19,7 @@ app = Flask(__name__)
 
 class YOLODetector:
     def __init__(self, model_path="yolov8n.pt", confidence_threshold=0.5):
-        """
-        Инициализация детектора YOLO
-        """
+        """Инициализация детектора YOLO"""
         self.confidence_threshold = confidence_threshold
         logger.info(f"🔄 Loading YOLO model: {model_path}")
         
@@ -40,23 +37,28 @@ class YOLODetector:
             raise
     
     def detect(self, image_path):
-        """
-        Выполнить детекцию объектов на изображении
-        """
+        """Выполнить детекцию объектов на изображении"""
+        logger.info(f"🔍 Starting detection for: {image_path}")
+        
         if not os.path.exists(image_path):
+            logger.error(f"❌ File not found: {image_path}")
             raise FileNotFoundError(f"Image not found: {image_path}")
+        
+        logger.info(f"✅ File exists, size: {os.path.getsize(image_path)} bytes")
         
         start_time = time.time()
         
         try:
-            # Запуск детекции
             results = self.model(image_path, verbose=False)
+            detection_time = time.time() - start_time
+            logger.info(f"✅ YOLO completed in {detection_time:.2f}s")
             
             detections = []
             total_objects = 0
             
             for result in results:
-                if result.boxes is not None:
+                if result.boxes is not None and len(result.boxes) > 0:
+                    logger.info(f"📦 Found {len(result.boxes)} boxes")
                     for box, conf, cls in zip(
                         result.boxes.xyxy.cpu().numpy(),
                         result.boxes.conf.cpu().numpy(), 
@@ -75,6 +77,8 @@ class YOLODetector:
                                 }
                             })
                             total_objects += 1
+                else:
+                    logger.info("📦 No boxes found in results")
             
             processing_time = time.time() - start_time
             
@@ -95,18 +99,18 @@ class YOLODetector:
                 'image_path': image_path
             }
 
-# Глобальный детектор
+# Глобальный детектор - будет инициализирован при первом запросе
 detector = None
 
-def initialize_detector():
-    """Инициализация детектора при старте приложения"""
+def get_detector():
+    """Ленивая инициализация детектора"""
     global detector
-    
-    model_path = os.getenv('YOLO_MODEL_PATH', 'yolov8n.pt')
-    confidence = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
-    
-    logger.info(f"🚀 Initializing detector with model: {model_path}")
-    detector = YOLODetector(model_path=model_path, confidence_threshold=confidence)
+    if detector is None:
+        model_path = os.getenv('YOLO_MODEL_PATH', 'yolov8n.pt')
+        confidence = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
+        logger.info(f"🚀 Initializing detector with model: {model_path}")
+        detector = YOLODetector(model_path=model_path, confidence_threshold=confidence)
+    return detector
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -119,16 +123,11 @@ def health_check():
 
 @app.route('/detect', methods=['POST'])
 def detect():
-    """
-    Основной эндпоинт для детекции объектов
-    """
-    if detector is None:
-        return jsonify({
-            'success': False,
-            'error': 'Detector not initialized'
-        }), 500
-    
+    """Основной эндпоинт для детекции объектов"""
     try:
+        # Инициализация детектора при первом запросе
+        det = get_detector()
+        
         data = request.get_json()
         
         if not data or 'image_path' not in data:
@@ -140,7 +139,7 @@ def detect():
         image_path = data['image_path']
         logger.info(f"🔍 Processing detection request for: {os.path.basename(image_path)}")
         
-        result = detector.detect(image_path)
+        result = det.detect(image_path)
         
         if result['success']:
             logger.info(f"✅ Detection completed: {result['total_objects']} objects found in {result['processing_time_ms']}ms")
@@ -157,18 +156,16 @@ def detect():
 @app.route('/model/info', methods=['GET'])
 def model_info():
     """Информация о загруженной модели"""
-    if detector is None:
-        return jsonify({'error': 'Detector not initialized'}), 500
+    det = get_detector()
     
     return jsonify({
         'model_loaded': True,
-        'confidence_threshold': detector.confidence_threshold,
-        'available_classes': list(detector.model.names.values()) if detector.model else []
+        'confidence_threshold': det.confidence_threshold,
+        'available_classes': list(det.model.names.values()) if det.model else []
     })
 
-initialize_detector()
-
 if __name__ == '__main__':
+    # Для локального запуска через python main.py
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 5000))
     logger.info(f"🌟 Starting YOLO Detection Service (DEV MODE) on {host}:{port}")

@@ -209,7 +209,7 @@ detection-build: ## Build detection service
 detection-run: ## Run detection service standalone
 	@echo "Starting detection service..."
 	docker run --rm \
-		-p 5000:5000 \
+		-p 5001:5000 \
 		-v $(pwd)/output:/app/data \
 		-e CONFIDENCE_THRESHOLD=0.5 \
 		yolo-detection-service
@@ -220,14 +220,14 @@ detection-test: ## Test detection service
 		echo "Please provide IMAGE_PATH: make detection-test IMAGE_PATH=output/frame_123.jpg"; \
 		exit 1; \
 	fi
-	curl -X POST http://localhost:5000/detect \
+	curl -X POST http://localhost:5001/detect \
 		-H "Content-Type: application/json" \
 		-d '{"image_path": "$(IMAGE_PATH)"}' \
 		| jq .
 
 detection-health: ## Check detection service health
 	@echo "Checking detection service health..."
-	curl -s http://localhost:5000/health | jq .
+	curl -s http://localhost:5001/health | jq .
 
 # Full system commands with detection
 start-full: ## Start full system with detection
