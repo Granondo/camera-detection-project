@@ -245,3 +245,28 @@ restart-detection: ## Restart only detection service
 logs-detection: ## Show detection service logs
 	@echo "Detection service logs:"
 	docker-compose logs -f detection-service
+
+db-clear: ## Clear all data from database (keep tables)
+	@echo "⚠️  Clearing all data from database..."
+	docker-compose exec postgres psql -U postgres -d surveillance -c "\
+		TRUNCATE TABLE detections CASCADE; \
+		TRUNCATE TABLE frames CASCADE; \
+		TRUNCATE TABLE recordings CASCADE; \
+		TRUNCATE TABLE events CASCADE; \
+		TRUNCATE TABLE system_stats CASCADE; \
+		TRUNCATE TABLE cameras CASCADE; \
+		ALTER SEQUENCE cameras_id_seq RESTART WITH 1; \
+		ALTER SEQUENCE recordings_id_seq RESTART WITH 1; \
+		ALTER SEQUENCE frames_id_seq RESTART WITH 1; \
+		ALTER SEQUENCE detections_id_seq RESTART WITH 1; \
+		ALTER SEQUENCE events_id_seq RESTART WITH 1; \
+		ALTER SEQUENCE system_stats_id_seq RESTART WITH 1;"
+	@echo "✅ Database cleared"
+
+output-clear: ## Clear output directory
+	@echo "🗑️  Clearing output directory..."
+	rm -rf output/*.jpg output/*.mp4 output/*.h264
+	@echo "✅ Output cleared"
+
+clear-all: db-clear output-clear ## Clear both database and output
+	@echo "🎉 Everything cleared!"
