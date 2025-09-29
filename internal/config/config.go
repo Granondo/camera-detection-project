@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+type DetectionServiceConfig struct {
+    URL               string
+    Timeout           time.Duration
+    MaxRetries        int
+    ConfidenceThreshold float64
+}
+
 type Config struct {
 	// Camera settings
 	RTSPURL         string
@@ -28,6 +35,9 @@ type Config struct {
 	DatabasePassword string
 	DatabaseName     string
 	DatabaseSSLMode  string
+
+	// Detection settings
+	DetectionService DetectionServiceConfig
 }
 
 func Load() (*Config, error) {

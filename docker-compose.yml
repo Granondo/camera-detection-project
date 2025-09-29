@@ -18,6 +18,31 @@ services:
     networks:
       - surveillance-network
 
+  # YOLO Detection Service - НОВЫЙ СЕРВИС
+  detection-service:
+    build: 
+      context: ./detection_service
+      dockerfile: Dockerfile
+    container_name: yolo-detection-service
+    environment:
+      - YOLO_MODEL_PATH=yolov8n.pt
+      - CONFIDENCE_THRESHOLD=0.5
+      - HOST=0.0.0.0
+      - PORT=5000
+      - DEBUG=false
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./output:/app/data  # Доступ к кадрам от камеры
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Camera Detection Application
   camera-detection:
     build: 
@@ -26,6 +51,7 @@ services:
     container_name: camera-detection
     depends_on:
       - postgres
+      - detection-service  # ДОБАВИТЬ ЗАВИСИМОСТЬ
     environment:
       # Camera Configuration
       - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream1}
@@ -38,6 +64,12 @@ services:
       - FFMPEG_PATH=ffmpeg
       - DETECTION_ENABLED=${DETECTION_ENABLED:-true}
       
+      # НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ DETECTION SERVICE:
+      - DETECTION_SERVICE_URL=http://detection-service:5000
+      - DETECTION_SERVICE_TIMEOUT=30
+      - DETECTION_SERVICE_MAX_RETRIES=3
+      - DETECTION_CONFIDENCE_THRESHOLD=0.5
+      
       # Database Configuration
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
@@ -49,12 +81,10 @@ services:
       - ./output:/app/output
       - ./logs:/app/logs
     restart: unless-stopped
-    network_mode: host  # For easier RTSP access
-    # Alternative: use bridge network if you prefer
-    # networks:
-    #   - surveillance-network
-    #   ports:
-    #     - "8080:8080"
+    networks:
+      - surveillance-network
+    ports:
+      - "8080:8080"
 
   # pgAdmin for database management (optional)
   pgadmin:
@@ -64,7 +94,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@surveillance.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
-      - "8080:80"
+      - "8081:80"  # Изменили порт
     depends_on:
       - postgres
     volumes:
