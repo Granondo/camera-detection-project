@@ -200,3 +200,48 @@ pgadmin: ## Start pgAdmin web interface
 	@echo "Starting pgAdmin..."
 	docker-compose up -d pgadmin
 	@echo "pgAdmin available at: http://localhost:8080"
+
+# Detection service commands
+detection-build: ## Build detection service
+	@echo "Building detection service..."
+	docker build -t yolo-detection-service ./detection_service
+
+detection-run: ## Run detection service standalone
+	@echo "Starting detection service..."
+	docker run --rm \
+		-p 5000:5000 \
+		-v $(pwd)/output:/app/data \
+		-e CONFIDENCE_THRESHOLD=0.5 \
+		yolo-detection-service
+
+detection-test: ## Test detection service
+	@echo "Testing detection service..."
+	@if [ -z "$(IMAGE_PATH)" ]; then \
+		echo "Please provide IMAGE_PATH: make detection-test IMAGE_PATH=output/frame_123.jpg"; \
+		exit 1; \
+	fi
+	curl -X POST http://localhost:5000/detect \
+		-H "Content-Type: application/json" \
+		-d '{"image_path": "$(IMAGE_PATH)"}' \
+		| jq .
+
+detection-health: ## Check detection service health
+	@echo "Checking detection service health..."
+	curl -s http://localhost:5000/health | jq .
+
+# Full system commands with detection
+start-full: ## Start full system with detection
+	@echo "Starting full surveillance system..."
+	docker-compose up --build
+
+stop-full: ## Stop full system
+	@echo "Stopping full surveillance system..."
+	docker-compose down
+
+restart-detection: ## Restart only detection service
+	@echo "Restarting detection service..."
+	docker-compose restart detection-service
+
+logs-detection: ## Show detection service logs
+	@echo "Detection service logs:"
+	docker-compose logs -f detection-service

@@ -11,11 +11,37 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"bytes"
+    "encoding/json"
+    "net/http"
 
 	"github.com/fsnotify/fsnotify"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
 )
+
+type DetectionResponse struct {
+	Success       bool        `json:"success"`
+	ImagePath     string      `json:"image_path"`
+	Detections    []Detection `json:"detections"`
+	TotalObjects  int         `json:"total_objects"`
+	ProcessingTimeMS float64  `json:"processing_time_ms"`
+	Error         string      `json:"error,omitempty"`
+}
+
+type Detection struct {
+	Class      string     `json:"class"`
+	ClassID    int        `json:"class_id"`
+	Confidence float64    `json:"confidence"`
+	BBox       BoundingBox `json:"bbox"`
+}
+
+type BoundingBox struct {
+	X1 float64 `json:"x1"`
+	Y1 float64 `json:"y1"`
+	X2 float64 `json:"x2"`
+	Y2 float64 `json:"y2"`
+}
 
 type FFmpegClient struct {
 	config         *config.Config
@@ -27,6 +53,7 @@ type FFmpegClient struct {
 	mu             sync.Mutex
 	storageService StorageService
 	currentRecording *storage.Recording
+	detectionClient *http.Client
 }
 
 // StorageService interface to work with storage package
@@ -55,12 +82,17 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 // NewFFmpegClientWithStorage creates a new FFmpeg client with storage integration
 func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	detectionClient := &http.Client{
+		Timeout: cfg.DetectionService.Timeout,
+	}
 	
 	client := &FFmpegClient{
 		config:         cfg,
 		ctx:            ctx,
 		cancel:         cancel,
 		storageService: storage,
+		detectionClient: detectionClient,
 	}
 
 	return client, nil
@@ -281,31 +313,176 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 }
 
 func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
-	// Placeholder for object detection logic
-	log.Printf("🔍 Running object detection on frame #%d...", frameNum)
+	if !c.config.DetectionEnabled {
+		return false
+	}
 	
-	// Simulate detection processing
-	time.Sleep(100 * time.Millisecond)
+	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
 	
-	// Simulate random detection (for testing)
-	hasDetection := (frameNum%10 == 0) // Every 10th frame has detection
+	// Подготовить запрос
+	requestBody := map[string]string{
+		"image_path": framePath,
+	}
 	
-	if hasDetection {
-		log.Printf("👤 Detection found in frame #%d!", frameNum)
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		log.Printf("❌ Failed to marshal detection request: %v", err)
+		return false
+	}
+	
+	// Отправить запрос к detection service с retry логикой
+	var result DetectionResponse
+	var lastErr error
+	
+	for attempt := 1; attempt <= c.config.DetectionService.MaxRetries; attempt++ {
+		detectURL := c.config.DetectionService.URL + "/detect"
+		resp, err := c.detectionClient.Post(detectURL, "application/json", bytes.NewBuffer(jsonData))
 		
-		// Create detection event if storage is available
-		if c.storageService != nil {
-			c.storageService.CreateEvent(
-				"person_detected",
-				"medium",
-				"Person Detected",
-				fmt.Sprintf("Person detected in frame #%d at %s", frameNum, framePath),
-				nil,
-			)
+		if err != nil {
+			lastErr = err
+			log.Printf("⚠️  Detection attempt %d/%d failed: %v", attempt, c.config.DetectionService.MaxRetries, err)
+			if attempt < c.config.DetectionService.MaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
+			}
+			break
+		}
+		
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("detection service returned status: %d", resp.StatusCode)
+			log.Printf("⚠️  Detection attempt %d/%d failed with status: %d", attempt, c.config.DetectionService.MaxRetries, resp.StatusCode)
+			if attempt < c.config.DetectionService.MaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
+			}
+			break
+		}
+		
+		// Разобрать ответ
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			lastErr = err
+			log.Printf("⚠️  Detection attempt %d/%d failed to decode response: %v", attempt, c.config.DetectionService.MaxRetries, err)
+			if attempt < c.config.DetectionService.MaxRetries {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
+			}
+			break
+		}
+		
+		// Успешно получили ответ
+		lastErr = nil
+		break
+	}
+	
+	if lastErr != nil {
+		log.Printf("❌ All detection attempts failed: %v", lastErr)
+		c.logDetectionError(lastErr.Error())
+		return false
+	}
+	
+	if !result.Success {
+		log.Printf("❌ Detection failed: %s", result.Error)
+		c.logDetectionError(result.Error)
+		return false
+	}
+	
+	// Обработать результаты
+	if result.TotalObjects > 0 {
+		log.Printf("✅ Found %d objects in %.1fms:", result.TotalObjects, result.ProcessingTimeMS)
+		
+		// Фильтровать по порогу уверенности
+		validDetections := []Detection{}
+		for _, detection := range result.Detections {
+			if detection.Confidence >= c.config.DetectionService.ConfidenceThreshold {
+				validDetections = append(validDetections, detection)
+				confidence := detection.Confidence * 100
+				log.Printf("   🎯 %s (%.1f%%)", detection.Class, confidence)
+			}
+		}
+		
+		if len(validDetections) > 0 {
+			// Создать событие о детекции
+			if c.storageService != nil {
+				c.createDetectionEvent(validDetections, framePath, frameNum)
+			}
+			return true
+		} else {
+			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d", 
+				c.config.DetectionService.ConfidenceThreshold, frameNum)
+			return false
+		}
+	} else {
+		log.Printf("📷 No objects detected in frame #%d (%.1fms)", frameNum, result.ProcessingTimeMS)
+		return false
+	}
+}
+
+func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath string, frameNum int) {
+	var mainDetection Detection
+	var maxConfidence float64 = 0
+	
+	for _, det := range detections {
+		if det.Confidence > maxConfidence {
+			maxConfidence = det.Confidence
+			mainDetection = det
 		}
 	}
 	
-	return hasDetection
+	if maxConfidence == 0 {
+		return
+	}
+	
+	// Определить серьезность события
+	severity := "low"
+	if maxConfidence > 0.7 {
+		severity = "medium"
+	}
+	if maxConfidence > 0.9 {
+		severity = "high"
+	}
+	
+	// Определить тип события в зависимости от класса объекта
+	eventType := "object_detected"
+	if mainDetection.Class == "person" {
+		eventType = "person_detected"
+	} else if mainDetection.Class == "car" || mainDetection.Class == "truck" {
+		eventType = "vehicle_detected"
+	}
+	
+	title := fmt.Sprintf("%s Detected", strings.Title(mainDetection.Class))
+	message := fmt.Sprintf("%s detected in frame #%d with %.1f%% confidence at %s",
+		strings.Title(mainDetection.Class), frameNum, maxConfidence*100, filepath.Base(framePath))
+	
+	if len(detections) > 1 {
+		message += fmt.Sprintf(" (total: %d objects)", len(detections))
+	}
+	
+	// Создать событие
+	err := c.storageService.CreateEvent(
+		eventType,
+		severity,
+		title,
+		message,
+		nil,
+	)
+	
+	if err != nil {
+		log.Printf("⚠️  Failed to create detection event: %v", err)
+	}
+}
+
+func (c *FFmpegClient) logDetectionError(errorMsg string) {
+	if c.storageService != nil {
+		c.storageService.CreateEvent(
+			"detection_error",
+			"medium",
+			"Detection Service Error",
+			fmt.Sprintf("Detection service failed: %s", errorMsg),
+			nil,
+		)
+	}
 }
 
 func (c *FFmpegClient) Stop() {
