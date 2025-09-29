@@ -318,10 +318,15 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 	}
 	
 	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
+
+	detectionPath := strings.Replace(framePath, c.config.OutputDir, "/app/data", 1)
+
+	log.Printf("🔄 Transformed path: %s -> %s", framePath, detectionPath)
+
 	
 	// Подготовить запрос
 	requestBody := map[string]string{
-		"image_path": framePath,
+		"image_path": detectionPath,
 	}
 	
 	jsonData, err := json.Marshal(requestBody)
