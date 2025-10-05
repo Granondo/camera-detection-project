@@ -10,6 +10,9 @@ camera-detection-project
 # Test binary, built with `go test -c`
 *.test
 
+# API Service binary
+api-service
+
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 

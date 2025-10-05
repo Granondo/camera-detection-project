@@ -89,6 +89,14 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	
 	// Static files (if needed)
 	mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(s.outputDir))))
+
+	 mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        if r.URL.Path == "/" {
+            http.ServeFile(w, r, "web/index.html")
+        } else {
+            http.NotFound(w, r)
+        }
+    })
 }
 
 // CORS Middleware
