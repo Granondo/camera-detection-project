@@ -114,7 +114,7 @@ services:
     networks:
       - surveillance-network
     ports:
-      - "8081:8080"
+      - "8090:8080"
 
   # pgAdmin for database management (optional)
   pgadmin:
