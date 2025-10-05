@@ -274,15 +274,15 @@ clear-all: db-clear output-clear ## Clear both database and output
 # API Server commands
 api-build: ## Build API server
 	@echo "Building API server..."
-	go build -o api-service cmd/api-service/main.go
+	go build -o api_service cmd/api_service/main.go
 
 api-run: api-build ## Run API server
 	@echo "Starting API server..."
-	./api-service
+	./api_service
 
 api-dev: ## Run API server in development mode
 	@echo "Running API server in development mode..."
-	go run cmd/api-service/main.go
+	go run cmd/api_service/main.go
 
 api-test: ## Test API endpoints
 	@echo "Testing API health endpoint..."
@@ -324,7 +324,7 @@ start-system: ## Start camera detection with API
 # Docker commands with API
 docker-api-build: ## Build API server Docker image
 	@echo "Building API server Docker image..."
-	docker build -t api-service:latest -f Dockerfile.api .
+	docker build -t api_service:latest -f Dockerfile.api .
 
 # Development workflow
 dev-full: db-start ## Full development setup

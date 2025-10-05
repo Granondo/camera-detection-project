@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 
 # Build API server
-RUN go build -o api-service cmd/api_service/main.go
+RUN go build -o api_service cmd/api_service/main.go
 
 # Final stage
 FROM alpine:latest
@@ -20,7 +20,7 @@ RUN addgroup -g 1000 appgroup && \
 
 WORKDIR /app
 
-COPY --from=builder /app/api-service .
+COPY --from=builder /app/api_service .
 
 # Create directories
 RUN mkdir -p output logs && \
@@ -38,4 +38,4 @@ ENV OUTPUT_DIR=/app/output
 
 EXPOSE 8080
 
-CMD ["./api-service"]
+CMD ["./api_service"]

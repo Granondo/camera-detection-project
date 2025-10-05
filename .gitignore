@@ -11,7 +11,7 @@ camera-detection-project
 *.test
 
 # API Service binary
-api-service
+api_service
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
