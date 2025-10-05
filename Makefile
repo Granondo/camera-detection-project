@@ -270,3 +270,106 @@ output-clear: ## Clear output directory
 
 clear-all: db-clear output-clear ## Clear both database and output
 	@echo "🎉 Everything cleared!"
+
+# API Server commands
+api-build: ## Build API server
+	@echo "Building API server..."
+	go build -o api-service cmd/api-service/main.go
+
+api-run: api-build ## Run API server
+	@echo "Starting API server..."
+	./api-service
+
+api-dev: ## Run API server in development mode
+	@echo "Running API server in development mode..."
+	go run cmd/api-service/main.go
+
+api-test: ## Test API endpoints
+	@echo "Testing API health endpoint..."
+	curl -s http://localhost:8080/api/health | jq .
+	@echo ""
+	@echo "Testing API status endpoint..."
+	curl -s http://localhost:8080/api/status | jq .
+
+api-status: ## Show API status
+	@echo "📊 API Status:"
+	@curl -s http://localhost:8080/api/status | jq '.data'
+
+api-recordings: ## List recordings via API
+	@echo "📼 Recent Recordings:"
+	@curl -s "http://localhost:8080/api/recordings?limit=5" | jq '.data'
+
+api-frames: ## List frames with detections
+	@echo "🎯 Frames with Detections:"
+	@curl -s "http://localhost:8080/api/frames?has_detection=true&limit=10" | jq '.data'
+
+api-events: ## List recent events
+	@echo "📢 Recent Events:"
+	@curl -s "http://localhost:8080/api/events?limit=10" | jq '.data'
+
+api-stats: ## Show database statistics
+	@echo "📈 Database Statistics:"
+	@curl -s http://localhost:8080/api/stats | jq '.data'
+
+# Combined system commands
+start-all: db-start ## Start everything (DB + Camera + API)
+	@echo "🚀 Starting full system..."
+	@sleep 3
+	@make -j2 run api-run
+
+start-system: ## Start camera detection with API
+	@echo "🎬 Starting camera detection system with API..."
+	@make -j2 run api-run
+
+# Docker commands with API
+docker-api-build: ## Build API server Docker image
+	@echo "Building API server Docker image..."
+	docker build -t api-service:latest -f Dockerfile.api .
+
+# Development workflow
+dev-full: db-start ## Full development setup
+	@echo "🛠️ Starting full development environment..."
+	@sleep 3
+	@echo "Starting camera service and API server..."
+	@make -j2 run-dev api-dev
+
+# Testing workflow
+test-api-full: ## Full API testing suite
+	@echo "🧪 Running full API test suite..."
+	@echo ""
+	@echo "1️⃣ Health Check:"
+	@curl -s http://localhost:8080/api/health | jq .
+	@echo ""
+	@echo "2️⃣ System Status:"
+	@curl -s http://localhost:8080/api/status | jq '.data.system_status'
+	@echo ""
+	@echo "3️⃣ Camera Info:"
+	@curl -s http://localhost:8080/api/camera | jq '.data.name,.data.status'
+	@echo ""
+	@echo "4️⃣ Statistics:"
+	@curl -s http://localhost:8080/api/stats | jq .
+	@echo ""
+	@echo "5️⃣ Recent Events:"
+	@curl -s "http://localhost:8080/api/events?limit=3" | jq '.data[].title'
+	@echo ""
+	@echo "✅ API tests completed!"
+
+# Open web dashboard
+dashboard: ## Open web dashboard in browser
+	@echo "🌐 Opening dashboard..."
+	@open http://localhost:8080 || xdg-open http://localhost:8080 || start http://localhost:8080
+
+# Logs for API
+logs-api: ## Show API server logs
+	@if [ -f logs/api.log ]; then \
+		tail -f logs/api.log; \
+	else \
+		echo "No API logs found. API server might not be running."; \
+	fi
+
+# Quick demo
+demo: db-start ## Quick demo with sample data
+	@echo "🎭 Starting demo..."
+	@make db-migrate
+	@sleep 2
+	@make -j2 run-dev api-dev

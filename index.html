@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Surveillance API Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .recordings-list, .frames-grid {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .recording-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .recording-item:hover {
+            background: #e9ecef;
+        }
+
+        .recording-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .recording-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .frames-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .frame-item {
+            position: relative;
+            cursor: pointer;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+
+        .frame-item:hover {
+            transform: scale(1.05);
+        }
+
+        .frame-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+
+        .detection-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #ff4757;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+
+        .events-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .event-item {
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .event-low { border-color: #28a745; background: #d4edda; }
+        .event-medium { border-color: #ffc107; background: #fff3cd; }
+        .event-high { border-color: #fd7e14; background: #ffe5d0; }
+        .event-critical { border-color: #dc3545; background: #f8d7da; }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .status-online { color: #28a745; }
+        .status-offline { color: #dc3545; }
+
+        .api-url {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            margin-bottom: 10px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 Camera Surveillance Dashboard</h1>
+
+        <!-- API Configuration -->
+        <div class="card">
+            <h2>⚙️ API Configuration</h2>
+            <label>API Base URL:</label>
+            <input type="text" id="apiUrl" value="http://localhost:8080" placeholder="http://localhost:8080">
+            <button onclick="testConnection()">🔌 Test Connection</button>
+            <div id="connectionStatus"></div>
+        </div>
+
+        <!-- System Status -->
+        <div class="card">
+            <h2>📊 System Status</h2>
+            <div id="systemStatus">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Video Player -->
+        <div class="card">
+            <h2>🎬 Video Player</h2>
+            <div class="video-container">
+                <video id="videoPlayer" controls>
+                    <source id="videoSource" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div id="currentVideo"></div>
+        </div>
+
+        <!-- Recordings -->
+        <div class="card">
+            <h2>📼 Recordings</h2>
+            <button onclick="loadRecordings()">🔄 Refresh</button>
+            <div class="recordings-list" id="recordingsList">
+                <div class="loading">Click refresh to load recordings</div>
+            </div>
+        </div>
+
+        <!-- Frames with Detections -->
+        <div class="card">
+            <h2>🎯 Frames with Detections</h2>
+            <button onclick="loadFrames(true)">🔄 Refresh</button>
+            <div class="frames-grid" id="framesGrid">
+                <div class="loading">Click refresh to load frames</div>
+            </div>
+        </div>
+
+        <!-- Recent Events -->
+        <div class="card">
+            <h2>📢 Recent Events</h2>
+            <button onclick="loadEvents()">🔄 Refresh</button>
+            <div class="events-list" id="eventsList">
+                <div class="loading">Click refresh to load events</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = () => document.getElementById('apiUrl').value;
+
+        // Test API connection
+        async function testConnection() {
+            const statusDiv = document.getElementById('connectionStatus');
+            try {
+                const response = await fetch(`${API_BASE()}/api/health`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusDiv.innerHTML = '<div class="stat-box" style="background: #28a745; margin-top: 10px;">✅ Connected Successfully</div>';
+                    loadSystemStatus();
+                } else {
+                    statusDiv.innerHTML = '<div class="stat-box" style="background: #dc3545; margin-top: 10px;">❌ Connection Failed</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="stat-box" style="background: #dc3545; margin-top: 10px;">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load system status
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch(`${API_BASE()}/api/status`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.data;
+                    const html = `
+                        <div class="stat-box">
+                            <span class="stat-label">System Status</span>
+                            <span class="stat-value ${status.system_status === 'online' ? 'status-online' : 'status-offline'}">
+                                ${status.system_status === 'online' ? '🟢' : '🔴'} ${status.system_status}
+                            </span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Total Recordings</span>
+                            <span class="stat-value">${status.stats.recordings || 0}</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Total Frames</span>
+                            <span class="stat-value">${status.stats.frames || 0}</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Total Detections</span>
+                            <span class="stat-value">${status.stats.detections || 0}</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Storage Used</span>
+                            <span class="stat-value">${formatBytes(status.storage_usage_bytes)}</span>
+                        </div>
+                    `;
+                    document.getElementById('systemStatus').innerHTML = html;
+                }
+            } catch (error) {
+                document.getElementById('systemStatus').innerHTML = `<div class="loading">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Load recordings
+        async function loadRecordings() {
+            const listDiv = document.getElementById('recordingsList');
+            listDiv.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE()}/api/recordings?limit=20`);
+                const data = await response.json();
+                
+                if (data.success && data.data.length > 0) {
+                    const html = data.data.map(rec => `
+                        <div class="recording-item">
+                            <div class="recording-info">
+                                <div>
+                                    <strong>Recording #${rec.recording.id}</strong><br>
+                                    <small>${new Date(rec.recording.start_time).toLocaleString()}</small><br>
+                                    <small>Duration: ${rec.recording.duration}s | Size: ${formatBytes(rec.recording.file_size)}</small>
+                                </div>
+                                <div>
+                                    <span style="padding: 5px 10px; background: ${rec.file_exists ? '#28a745' : '#dc3545'}; color: white; border-radius: 5px; font-size: 0.8em;">
+                                        ${rec.file_exists ? '✓ Available' : '✗ Missing'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="recording-actions">
+                                <button onclick="playVideo(${rec.recording.id})" ${!rec.file_exists ? 'disabled' : ''}>
+                                    ▶️ Play
+                                </button>
+                                <button onclick="downloadVideo(${rec.recording.id})" ${!rec.file_exists ? 'disabled' : ''}>
+                                    ⬇️ Download
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                    listDiv.innerHTML = html;
+                } else {
+                    listDiv.innerHTML = '<div class="loading">No recordings found</div>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = `<div class="loading">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Play video
+        function playVideo(recordingId) {
+            const video = document.getElementById('videoPlayer');
+            const source = document.getElementById('videoSource');
+            source.src = `${API_BASE()}/api/video/${recordingId}`;
+            video.load();
+            video.play();
+            
+            document.getElementById('currentVideo').innerHTML = `
+                <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                    📹 Playing Recording #${recordingId}
+                </div>
+            `;
+        }
+
+        // Download video
+        function downloadVideo(recordingId) {
+            window.open(`${API_BASE()}/api/download/${recordingId}`, '_blank');
+        }
+
+        // Load frames
+        async function loadFrames(withDetection = false) {
+            const gridDiv = document.getElementById('framesGrid');
+            gridDiv.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const url = withDetection 
+                    ? `${API_BASE()}/api/frames?has_detection=true&limit=50`
+                    : `${API_BASE()}/api/frames?limit=50`;
+                    
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success && data.data.length > 0) {
+                    const html = data.data.map(frame => `
+                        <div class="frame-item" onclick="viewFrame(${frame.frame.id})">
+                            <img src="${API_BASE()}${frame.image_url}" alt="Frame ${frame.frame.id}">
+                            ${frame.has_detection ? '<span class="detection-badge">🎯 Detection</span>' : ''}
+                        </div>
+                    `).join('');
+                    gridDiv.innerHTML = html;
+                } else {
+                    gridDiv.innerHTML = '<div class="loading">No frames found</div>';
+                }
+            } catch (error) {
+                gridDiv.innerHTML = `<div class="loading">Error: ${error.message}</div>`;
+            }
+        }
+
+        // View frame in new window
+        function viewFrame(frameId) {
+            window.open(`${API_BASE()}/api/image/${frameId}`, '_blank');
+        }
+
+        // Load events
+        async function loadEvents() {
+            const listDiv = document.getElementById('eventsList');
+            listDiv.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE()}/api/events?limit=20`);
+                const data = await response.json();
+                
+                if (data.success && data.data.length > 0) {
+                    const html = data.data.map(event => `
+                        <div class="event-item event-${event.severity}">
+                            <strong>${event.title}</strong><br>
+                            <small>${new Date(event.timestamp).toLocaleString()}</small><br>
+                            <small>${event.message}</small>
+                        </div>
+                    `).join('');
+                    listDiv.innerHTML = html;
+                } else {
+                    listDiv.innerHTML = '<div class="loading">No events found</div>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = `<div class="loading">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Format bytes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            loadSystemStatus();
+        }, 30000);
+
+        // Initial load
+        window.addEventListener('load', () => {
+            testConnection();
+        });
+    </script>
+</body>
+</html>

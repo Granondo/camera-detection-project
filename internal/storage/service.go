@@ -300,3 +300,193 @@ func (s *Service) GetStorageUsage() (int64, error) {
 
 	return totalSize, err
 }
+
+// Добавить эти методы в internal/storage/service.go
+
+// GetRecordings retrieves recordings for a camera with limit
+func (s *Service) GetRecordings(cameraID int, limit int) ([]Recording, error) {
+	return s.recordingRepo.GetRecordingsByCamera(cameraID, limit)
+}
+
+// GetRecording retrieves a single recording by ID
+func (s *Service) GetRecording(recordingID int) (*Recording, error) {
+	return s.recordingRepo.GetRecording(recordingID)
+}
+
+// GetFrame retrieves a single frame by ID
+func (s *Service) GetFrame(frameID int) (*Frame, error) {
+	return s.frameRepo.GetFrame(frameID)
+}
+
+// GetFramesByTimeRange retrieves frames within a time range
+func (s *Service) GetFramesByTimeRange(cameraID int, start, end time.Time, limit int) ([]Frame, error) {
+	return s.frameRepo.GetFramesByTimeRange(cameraID, start, end, limit)
+}
+
+// GetFramesWithDetection retrieves frames that have detections
+func (s *Service) GetFramesWithDetection(cameraID int, limit int) ([]Frame, error) {
+	query := `
+		SELECT id, recording_id, camera_id, file_path, thumbnail_path, file_size,
+			   width, height, timestamp, has_detection, processed, created_at
+		FROM frames 
+		WHERE camera_id = $1 AND has_detection = TRUE
+		ORDER BY timestamp DESC 
+		LIMIT $2`
+
+	rows, err := s.db.GetConnection().Query(query, cameraID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var frames []Frame
+	for rows.Next() {
+		var frame Frame
+		err := rows.Scan(&frame.ID, &frame.RecordingID, &frame.CameraID, &frame.FilePath,
+			&frame.ThumbnailPath, &frame.FileSize, &frame.Width, &frame.Height,
+			&frame.Timestamp, &frame.HasDetection, &frame.Processed, &frame.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, frame)
+	}
+
+	return frames, rows.Err()
+}
+
+// GetDetectionsByFrame retrieves all detections for a specific frame
+func (s *Service) GetDetectionsByFrame(frameID int) ([]Detection, error) {
+	query := `
+		SELECT id, frame_id, object_type, confidence, bounding_box, timestamp, created_at
+		FROM detections
+		WHERE frame_id = $1
+		ORDER BY confidence DESC`
+
+	rows, err := s.db.GetConnection().Query(query, frameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var detections []Detection
+	for rows.Next() {
+		var detection Detection
+		err := rows.Scan(&detection.ID, &detection.FrameID, &detection.ObjectType,
+			&detection.Confidence, &detection.BoundingBox, &detection.Timestamp, &detection.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		detections = append(detections, detection)
+	}
+
+	return detections, rows.Err()
+}
+
+// SaveDetection saves a detection result to database
+func (s *Service) SaveDetection(frameID int, objectType string, confidence float64, boundingBox string) (*Detection, error) {
+	detection := &Detection{
+		FrameID:     frameID,
+		ObjectType:  objectType,
+		Confidence:  confidence,
+		BoundingBox: boundingBox,
+		Timestamp:   time.Now(),
+	}
+
+	query := `
+		INSERT INTO detections (frame_id, object_type, confidence, bounding_box, timestamp)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at`
+
+	err := s.db.GetConnection().QueryRow(query, detection.FrameID, detection.ObjectType,
+		detection.Confidence, detection.BoundingBox, detection.Timestamp).
+		Scan(&detection.ID, &detection.CreatedAt)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to save detection: %w", err)
+	}
+
+	return detection, nil
+}
+
+// GetRecentDetections retrieves recent detections across all cameras
+func (s *Service) GetRecentDetections(limit int) ([]Detection, error) {
+	query := `
+		SELECT id, frame_id, object_type, confidence, bounding_box, timestamp, created_at
+		FROM detections
+		ORDER BY timestamp DESC
+		LIMIT $1`
+
+	rows, err := s.db.GetConnection().Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var detections []Detection
+	for rows.Next() {
+		var detection Detection
+		err := rows.Scan(&detection.ID, &detection.FrameID, &detection.ObjectType,
+			&detection.Confidence, &detection.BoundingBox, &detection.Timestamp, &detection.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		detections = append(detections, detection)
+	}
+
+	return detections, rows.Err()
+}
+
+// GetDetectionStats returns statistics about detections
+func (s *Service) GetDetectionStats() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Total detections
+	var totalDetections int
+	err := s.db.GetConnection().QueryRow("SELECT COUNT(*) FROM detections").Scan(&totalDetections)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_detections"] = totalDetections
+
+	// Detections by object type
+	objectCounts := make(map[string]int)
+	rows, err := s.db.GetConnection().Query(`
+		SELECT object_type, COUNT(*) as count
+		FROM detections
+		GROUP BY object_type
+		ORDER BY count DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var objectType string
+		var count int
+		if err := rows.Scan(&objectType, &count); err != nil {
+			return nil, err
+		}
+		objectCounts[objectType] = count
+	}
+	stats["by_object_type"] = objectCounts
+
+	// Average confidence
+	var avgConfidence float64
+	err = s.db.GetConnection().QueryRow("SELECT AVG(confidence) FROM detections").Scan(&avgConfidence)
+	if err == nil {
+		stats["avg_confidence"] = avgConfidence
+	}
+
+	// Detections today
+	var detectionsToday int
+	err = s.db.GetConnection().QueryRow(`
+		SELECT COUNT(*) FROM detections
+		WHERE DATE(timestamp) = CURRENT_DATE
+	`).Scan(&detectionsToday)
+	if err == nil {
+		stats["detections_today"] = detectionsToday
+	}
+
+	return stats, nil
+}
