@@ -35,27 +35,27 @@ type APIResponse struct {
 }
 
 type StatusResponse struct {
-	SystemStatus  string                 `json:"system_status"`
-	Camera        *storage.Camera        `json:"camera"`
-	Stats         map[string]int         `json:"stats"`
-	StorageUsage  int64                  `json:"storage_usage_bytes"`
-	Uptime        string                 `json:"uptime"`
-	LastUpdated   time.Time              `json:"last_updated"`
+	SystemStatus string          `json:"system_status"`
+	Camera       *storage.Camera `json:"camera"`
+	Stats        map[string]int  `json:"stats"`
+	StorageUsage int64           `json:"storage_usage_bytes"`
+	Uptime       string          `json:"uptime"`
+	LastUpdated  time.Time       `json:"last_updated"`
 }
 
 type RecordingResponse struct {
-	Recording     *storage.Recording     `json:"recording"`
-	FileExists    bool                   `json:"file_exists"`
-	DownloadURL   string                 `json:"download_url"`
-	StreamURL     string                 `json:"stream_url,omitempty"`
+	Recording   *storage.Recording `json:"recording"`
+	FileExists  bool               `json:"file_exists"`
+	DownloadURL string             `json:"download_url"`
+	StreamURL   string             `json:"stream_url,omitempty"`
 }
 
 type FrameResponse struct {
-	Frame         *storage.Frame         `json:"frame"`
-	FileExists    bool                   `json:"file_exists"`
-	ImageURL      string                 `json:"image_url"`
-	ThumbnailURL  string                 `json:"thumbnail_url,omitempty"`
-	HasDetection  bool                   `json:"has_detection"`
+	Frame        *storage.Frame `json:"frame"`
+	FileExists   bool           `json:"file_exists"`
+	ImageURL     string         `json:"image_url"`
+	ThumbnailURL string         `json:"thumbnail_url,omitempty"`
+	HasDetection bool           `json:"has_detection"`
 }
 
 // SetupRoutes configures all API routes
@@ -63,40 +63,49 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	// Status and Info
 	mux.HandleFunc("/api/status", s.corsMiddleware(s.handleStatus))
 	mux.HandleFunc("/api/health", s.corsMiddleware(s.handleHealth))
-	
+
 	// Recordings
 	mux.HandleFunc("/api/recordings", s.corsMiddleware(s.handleRecordings))
 	mux.HandleFunc("/api/recordings/", s.corsMiddleware(s.handleRecordingByID))
-	
+
 	// Video streaming/download
 	mux.HandleFunc("/api/video/", s.corsMiddleware(s.handleVideoStream))
 	mux.HandleFunc("/api/download/", s.corsMiddleware(s.handleVideoDownload))
-	
+
 	// Frames
 	mux.HandleFunc("/api/frames", s.corsMiddleware(s.handleFrames))
 	mux.HandleFunc("/api/frames/", s.corsMiddleware(s.handleFrameByID))
 	mux.HandleFunc("/api/image/", s.corsMiddleware(s.handleImageServe))
-	
+
 	// Events
 	mux.HandleFunc("/api/events", s.corsMiddleware(s.handleEvents))
-	
+
 	// Statistics
 	mux.HandleFunc("/api/stats", s.corsMiddleware(s.handleStats))
 	mux.HandleFunc("/api/stats/daily", s.corsMiddleware(s.handleDailyStats))
-	
+
 	// Camera
 	mux.HandleFunc("/api/camera", s.corsMiddleware(s.handleCameraInfo))
-	
+
 	// Static files (if needed)
 	mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(s.outputDir))))
 
-	 mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Path == "/" {
-            http.ServeFile(w, r, "web/index.html")
-        } else {
-            http.NotFound(w, r)
-        }
-    })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Пропускаем API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Пропускаем /files/
+		if strings.HasPrefix(r.URL.Path, "/files/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// ДЛЯ ВСЕХ остальных путей отдаем index.html
+		http.ServeFile(w, r, "web/index.html")
+	})
 }
 
 // CORS Middleware
@@ -105,12 +114,12 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next(w, r)
 	}
 }
@@ -288,7 +297,7 @@ func (s *Server) handleVideoDownload(w http.ResponseWriter, r *http.Request) {
 	// Set headers for download
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"recording_%d.mp4\"", recording.ID))
-	
+
 	http.ServeFile(w, r, recording.FilePath)
 }
 
@@ -305,7 +314,7 @@ func (s *Server) handleFrames(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasDetection := r.URL.Query().Get("has_detection")
-	
+
 	camera, _ := s.storage.GetCameraStatus()
 	if camera == nil {
 		s.jsonError(w, http.StatusInternalServerError, "Camera not found")
@@ -416,7 +425,7 @@ func (s *Server) handleImageServe(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	
+
 	http.ServeFile(w, r, filePath)
 }
 
@@ -570,12 +579,12 @@ func (s *Server) getIntParam(r *http.Request, param string, defaultValue int) in
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	intValue, err := strconv.Atoi(value)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return intValue
 }
 

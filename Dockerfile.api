@@ -22,6 +22,8 @@ WORKDIR /app
 
 COPY --from=builder /app/api_service .
 
+COPY --from=builder /app/web ./web
+
 # Create directories
 RUN mkdir -p output logs && \
     chown -R appuser:appgroup /app
