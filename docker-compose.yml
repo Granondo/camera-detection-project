@@ -116,7 +116,22 @@ services:
     ports:
       - "8090:8080"
 
-  # pgAdmin for database management (optional)
+  surveillance-ui:
+    build:
+      context: ./surveillance-ui
+      dockerfile: Dockerfile.dev
+    container_name: surveillance-ui
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./surveillance-ui:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    command: npm run dev -- --host
+    networks:
+      - surveillance-network# pgAdmin for database management (optional)
+  
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: surveillance-pgadmin

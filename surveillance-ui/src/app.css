@@ -1,0 +1,98 @@
+/* Импортируем Open Props */
+@import "open-props/style";
+@import "open-props/normalize";
+
+/* Дополнительные модули */
+@import "open-props/buttons";
+@import "open-props/gradients";
+
+/* Кастомные переменные для проекта */
+:root {
+  --primary: var(--purple-6);
+  --primary-dark: var(--purple-8);
+  --primary-light: var(--purple-3);
+  
+  --surface-card: var(--surface-1);
+  --surface-card-hover: var(--surface-2);
+  
+  --color-green: var(--green-6);
+  --color-blue: var(--blue-6);
+  --color-orange: var(--orange-6);
+  --color-red: var(--red-6);
+  
+  --gradient-primary: linear-gradient(135deg, var(--purple-6), var(--blue-6));
+  --gradient-bg: linear-gradient(135deg, var(--purple-1), var(--blue-1));
+}
+
+/* Глобальные стили */
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--gradient-bg);
+  color: var(--text-1);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Utility классы */
+.card {
+  background: var(--surface-card);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  padding: var(--size-6);
+  transition: box-shadow var(--animation-duration-normal) var(--ease-3);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-4);
+}
+
+.gradient-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.fade-in {
+  animation: fadeIn var(--animation-duration-normal) var(--ease-3);
+}
+
+.pulse {
+  animation: pulse 2s var(--ease-3) infinite;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: var(--size-2);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gray-6);
+  border-radius: var(--radius-2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-8);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
