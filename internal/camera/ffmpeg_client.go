@@ -2,37 +2,38 @@ package camera
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"strings"
+	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
-	"bytes"
-    "encoding/json"
-    "net/http"
 
-	"github.com/fsnotify/fsnotify"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
+	"github.com/fsnotify/fsnotify"
 )
 
 type DetectionResponse struct {
-	Success       bool        `json:"success"`
-	ImagePath     string      `json:"image_path"`
-	Detections    []Detection `json:"detections"`
-	TotalObjects  int         `json:"total_objects"`
-	ProcessingTimeMS float64  `json:"processing_time_ms"`
-	Error         string      `json:"error,omitempty"`
+	Success          bool        `json:"success"`
+	ImagePath        string      `json:"image_path"`
+	Detections       []Detection `json:"detections"`
+	TotalObjects     int         `json:"total_objects"`
+	ProcessingTimeMS float64     `json:"processing_time_ms"`
+	Error            string      `json:"error,omitempty"`
 }
 
 type Detection struct {
-	Class      string     `json:"class"`
-	ClassID    int        `json:"class_id"`
-	Confidence float64    `json:"confidence"`
+	Class      string      `json:"class"`
+	ClassID    int         `json:"class_id"`
+	Confidence float64     `json:"confidence"`
 	BBox       BoundingBox `json:"bbox"`
 }
 
@@ -44,16 +45,16 @@ type BoundingBox struct {
 }
 
 type FFmpegClient struct {
-	config         *config.Config
-	cmd            *exec.Cmd
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	frameCount     int
-	mu             sync.Mutex
-	storageService StorageService
+	config           *config.Config
+	cmd              *exec.Cmd
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	frameCount       int
+	mu               sync.Mutex
+	storageService   StorageService
 	currentRecording *storage.Recording
-	detectionClient *http.Client
+	detectionClient  *http.Client
 }
 
 // StorageService interface to work with storage package
@@ -69,7 +70,7 @@ type StorageService interface {
 // NewFFmpegClient creates a new FFmpeg client without storage
 func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	client := &FFmpegClient{
 		config: cfg,
 		ctx:    ctx,
@@ -86,12 +87,12 @@ func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FF
 	detectionClient := &http.Client{
 		Timeout: cfg.DetectionService.Timeout,
 	}
-	
+
 	client := &FFmpegClient{
-		config:         cfg,
-		ctx:            ctx,
-		cancel:         cancel,
-		storageService: storage,
+		config:          cfg,
+		ctx:             ctx,
+		cancel:          cancel,
+		storageService:  storage,
 		detectionClient: detectionClient,
 	}
 
@@ -105,7 +106,7 @@ func (c *FFmpegClient) Start() error {
 	if c.storageService != nil {
 		timestamp := time.Now().Format("20060102_150405")
 		recordingPath := filepath.Join(c.config.OutputDir, fmt.Sprintf("recording_%s.mp4", timestamp))
-		
+
 		recording, err := c.storageService.StartRecording(recordingPath)
 		if err != nil {
 			log.Printf("⚠️  Warning: Could not create recording record: %v", err)
@@ -117,9 +118,9 @@ func (c *FFmpegClient) Start() error {
 
 	// Build FFmpeg command for RTSP stream processing
 	args := c.buildFFmpegArgs()
-	
+
 	c.cmd = exec.CommandContext(c.ctx, c.config.FFmpegPath, args...)
-	
+
 	// Setup stdout and stderr pipes
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
@@ -138,15 +139,14 @@ func (c *FFmpegClient) Start() error {
 
 	// Start monitoring goroutines
 	c.wg.Add(2)
-	
+
 	go c.monitorOutput(stdout, "STDOUT")
 	go c.monitorOutput(stderr, "STDERR")
 
 	// Start frame processing if detection is enabled
-	if c.config.DetectionEnabled {
-		c.wg.Add(1)
-		go c.watchFrames()
-	}
+
+	c.wg.Add(1)
+	go c.watchFrames()
 
 	log.Println("✅ FFmpeg client started successfully")
 	return nil
@@ -157,23 +157,23 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 	rtspURL := c.config.RTSPURL
 	if c.config.Username != "" && c.config.Password != "" {
 		// Insert credentials into RTSP URL
-		rtspURL = fmt.Sprintf("rtsp://%s:%s@%s", 
-			c.config.Username, 
-			c.config.Password, 
+		rtspURL = fmt.Sprintf("rtsp://%s:%s@%s",
+			c.config.Username,
+			c.config.Password,
 			c.config.RTSPURL[7:]) // Remove "rtsp://" prefix
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
 	args := []string{
-		"-rtsp_transport", "tcp",  // Use TCP for RTSP (more reliable)
+		"-rtsp_transport", "tcp", // Use TCP for RTSP (more reliable)
 		"-i", rtspURL,
-		"-c:v", "libx264",         // Video codec
-		"-preset", "ultrafast",    // Encoding speed
-		"-tune", "zerolatency",    // Low latency
-		"-f", "segment",           // Output format
-		"-segment_time", "60",     // 60 second segments
-		"-segment_format", "mp4",  // Segment format
-		"-strftime", "1",          // Enable strftime in filename
+		"-c:v", "libx264", // Video codec
+		"-preset", "ultrafast", // Encoding speed
+		"-tune", "zerolatency", // Low latency
+		"-f", "segment", // Output format
+		"-segment_time", "60", // 60 second segments
+		"-segment_format", "mp4", // Segment format
+		"-strftime", "1", // Enable strftime in filename
 		filepath.Join(c.config.OutputDir, fmt.Sprintf("recording_%s_%%Y%%m%%d_%%H%%M%%S.mp4", timestamp)),
 	}
 
@@ -194,7 +194,7 @@ func (c *FFmpegClient) buildFFmpegArgs() []string {
 func (c *FFmpegClient) monitorOutput(pipe io.ReadCloser, name string) {
 	defer c.wg.Done()
 	defer pipe.Close()
-	
+
 	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
 		select {
@@ -203,14 +203,14 @@ func (c *FFmpegClient) monitorOutput(pipe io.ReadCloser, name string) {
 		default:
 			line := scanner.Text()
 			log.Printf("[FFmpeg %s]: %s", name, line)
-			
+
 			// Create error events for important FFmpeg errors
 			if c.storageService != nil && name == "STDERR" {
 				c.handleFFmpegError(line)
 			}
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		log.Printf("Error reading %s: %v", name, err)
 	}
@@ -230,119 +230,156 @@ func (c *FFmpegClient) handleFFmpegError(line string) {
 }
 
 func (c *FFmpegClient) watchFrames() {
-    defer c.wg.Done()
-    
-    watcher, err := fsnotify.NewWatcher()
-    if err != nil {
-        log.Printf("❌ Failed to create file watcher: %v", err)
-        return
-    }
-    defer watcher.Close()
-    
-    // Следить за папкой output
-    err = watcher.Add(c.config.OutputDir)
-    if err != nil {
-        log.Printf("❌ Failed to watch directory: %v", err)
-        return
-    }
-    
-    log.Printf("👁️ Watching for new frames in: %s", c.config.OutputDir)
-    
-    for {
-        select {
-        case <-c.ctx.Done():
-            return
-        case event, ok := <-watcher.Events:
-            if !ok {
-                return
-            }
-            
-            // Обработка только создания .jpg файлов
-            if event.Op&fsnotify.Create == fsnotify.Create && 
-               strings.HasSuffix(event.Name, ".jpg") &&
-               strings.Contains(event.Name, "frame_") {
-                
-                c.handleNewFrame(event.Name)
-            }
-            
-        case err, ok := <-watcher.Errors:
-            if !ok {
-                return
-            }
-            log.Printf("⚠️ File watcher error: %v", err)
-        }
-    }
+	defer c.wg.Done()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("❌ Failed to create file watcher: %v", err)
+		return
+	}
+	defer watcher.Close()
+
+	// Следить за папкой output
+	err = watcher.Add(c.config.OutputDir)
+	if err != nil {
+		log.Printf("❌ Failed to watch directory: %v", err)
+		return
+	}
+
+	log.Printf("👁️ Watching for new frames in: %s", c.config.OutputDir)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			// Обработка только создания .jpg файлов
+			if event.Op&fsnotify.Create == fsnotify.Create &&
+				strings.HasSuffix(event.Name, ".jpg") &&
+				strings.Contains(event.Name, "frame_") {
+
+				c.handleNewFrame(event.Name)
+			}
+
+			if event.Op&fsnotify.Create == fsnotify.Create &&
+				strings.HasSuffix(event.Name, ".mp4") &&
+				strings.Contains(event.Name, "recording_") {
+
+				c.handleNewRecording(event.Name)
+			}
+
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("⚠️ File watcher error: %v", err)
+		}
+	}
 }
 
 func (c *FFmpegClient) handleNewFrame(framePath string) {
-    log.Printf("🖼️ New frame detected: %s", filepath.Base(framePath))
-    
-    // Небольшая задержка чтобы файл полностью записался
-    time.Sleep(100 * time.Millisecond)
-    
-    // Сохранить в базу данных
-    if c.storageService != nil {
-        var recordingID *int
-        if c.currentRecording != nil {
-            recordingID = &c.currentRecording.ID
-        }
-        
-        frame, err := c.storageService.SaveFrame(framePath, recordingID)
-        if err != nil {
-            log.Printf("⚠️ Warning: Could not save frame to database: %v", err)
-            return
-        }
-        
-        log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
-        
-        // Запустить детекцию если включена
-        if c.config.DetectionEnabled {
-            c.mu.Lock()
-            c.frameCount++
-            frameNum := c.frameCount
-            c.mu.Unlock()
-            
-            hasDetection := c.detectObjects(framePath, frameNum)
-            
-            // Обновить результаты детекции
-            if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
-                log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
-            }
-        }
-    }
+	log.Printf("🖼️ New frame detected: %s", filepath.Base(framePath))
+
+	// Небольшая задержка чтобы файл полностью записался
+	time.Sleep(100 * time.Millisecond)
+
+	// Сохранить в базу данных
+	if c.storageService != nil {
+		var recordingID *int
+		if c.currentRecording != nil {
+			recordingID = &c.currentRecording.ID
+		}
+
+		frame, err := c.storageService.SaveFrame(framePath, recordingID)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not save frame to database: %v", err)
+			return
+		}
+
+		log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
+
+		// Запустить детекцию если включена
+		if c.config.DetectionEnabled {
+			c.mu.Lock()
+			c.frameCount++
+			frameNum := c.frameCount
+			c.mu.Unlock()
+
+			hasDetection := c.detectObjects(framePath, frameNum)
+
+			// Обновить результаты детекции
+			if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
+				log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
+			}
+		}
+	}
+}
+
+func (c *FFmpegClient) handleNewRecording(videoPath string) {
+	log.Printf("🎥 New video segment detected: %s", filepath.Base(videoPath))
+
+	// Подождать чтобы файл полностью записался
+	time.Sleep(1 * time.Second)
+
+	// Получить информацию о файле
+	fileInfo, err := os.Stat(videoPath)
+	if err != nil {
+		log.Printf("⚠️ Could not get video file info: %v", err)
+		return
+	}
+
+	// Создать запись в БД
+	if c.storageService != nil {
+		recording, err := c.storageService.StartRecording(videoPath)
+		if err != nil {
+			log.Printf("⚠️ Could not create recording record: %v", err)
+			return
+		}
+
+		// Сразу финализировать запись (т.к. сегмент уже завершен)
+		if err := c.storageService.FinishRecording(recording.ID, videoPath); err != nil {
+			log.Printf("⚠️ Could not finish recording: %v", err)
+		} else {
+			log.Printf("✅ Saved recording to database (ID: %d, Size: %s)",
+				recording.ID, formatBytes(fileInfo.Size()))
+		}
+	}
 }
 
 func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 	if !c.config.DetectionEnabled {
 		return false
 	}
-	
+
 	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
 
 	detectionPath := strings.Replace(framePath, c.config.OutputDir, "/app/data", 1)
 
 	log.Printf("🔄 Transformed path: %s -> %s", framePath, detectionPath)
 
-	
 	// Подготовить запрос
 	requestBody := map[string]string{
 		"image_path": detectionPath,
 	}
-	
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		log.Printf("❌ Failed to marshal detection request: %v", err)
 		return false
 	}
-	
+
 	// Отправить запрос к detection service с retry логикой
 	var result DetectionResponse
 	var lastErr error
-	
+
 	for attempt := 1; attempt <= c.config.DetectionService.MaxRetries; attempt++ {
 		detectURL := c.config.DetectionService.URL + "/detect"
 		resp, err := c.detectionClient.Post(detectURL, "application/json", bytes.NewBuffer(jsonData))
-		
+
 		if err != nil {
 			lastErr = err
 			log.Printf("⚠️  Detection attempt %d/%d failed: %v", attempt, c.config.DetectionService.MaxRetries, err)
@@ -352,9 +389,9 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 			}
 			break
 		}
-		
+
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("detection service returned status: %d", resp.StatusCode)
 			log.Printf("⚠️  Detection attempt %d/%d failed with status: %d", attempt, c.config.DetectionService.MaxRetries, resp.StatusCode)
@@ -364,7 +401,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 			}
 			break
 		}
-		
+
 		// Разобрать ответ
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			lastErr = err
@@ -375,28 +412,28 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 			}
 			break
 		}
-		
+
 		// Успешно получили ответ
 		lastErr = nil
 		break
 	}
-	
+
 	if lastErr != nil {
 		log.Printf("❌ All detection attempts failed: %v", lastErr)
 		c.logDetectionError(lastErr.Error())
 		return false
 	}
-	
+
 	if !result.Success {
 		log.Printf("❌ Detection failed: %s", result.Error)
 		c.logDetectionError(result.Error)
 		return false
 	}
-	
+
 	// Обработать результаты
 	if result.TotalObjects > 0 {
 		log.Printf("✅ Found %d objects in %.1fms:", result.TotalObjects, result.ProcessingTimeMS)
-		
+
 		// Фильтровать по порогу уверенности
 		validDetections := []Detection{}
 		for _, detection := range result.Detections {
@@ -406,7 +443,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 				log.Printf("   🎯 %s (%.1f%%)", detection.Class, confidence)
 			}
 		}
-		
+
 		if len(validDetections) > 0 {
 			// Создать событие о детекции
 			if c.storageService != nil {
@@ -414,7 +451,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 			}
 			return true
 		} else {
-			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d", 
+			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d",
 				c.config.DetectionService.ConfidenceThreshold, frameNum)
 			return false
 		}
@@ -427,18 +464,18 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath string, frameNum int) {
 	var mainDetection Detection
 	var maxConfidence float64 = 0
-	
+
 	for _, det := range detections {
 		if det.Confidence > maxConfidence {
 			maxConfidence = det.Confidence
 			mainDetection = det
 		}
 	}
-	
+
 	if maxConfidence == 0 {
 		return
 	}
-	
+
 	// Определить серьезность события
 	severity := "low"
 	if maxConfidence > 0.7 {
@@ -447,7 +484,7 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 	if maxConfidence > 0.9 {
 		severity = "high"
 	}
-	
+
 	// Определить тип события в зависимости от класса объекта
 	eventType := "object_detected"
 	if mainDetection.Class == "person" {
@@ -455,15 +492,15 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 	} else if mainDetection.Class == "car" || mainDetection.Class == "truck" {
 		eventType = "vehicle_detected"
 	}
-	
+
 	title := fmt.Sprintf("%s Detected", strings.Title(mainDetection.Class))
 	message := fmt.Sprintf("%s detected in frame #%d with %.1f%% confidence at %s",
 		strings.Title(mainDetection.Class), frameNum, maxConfidence*100, filepath.Base(framePath))
-	
+
 	if len(detections) > 1 {
 		message += fmt.Sprintf(" (total: %d objects)", len(detections))
 	}
-	
+
 	// Создать событие
 	err := c.storageService.CreateEvent(
 		eventType,
@@ -472,7 +509,7 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 		message,
 		nil,
 	)
-	
+
 	if err != nil {
 		log.Printf("⚠️  Failed to create detection event: %v", err)
 	}
@@ -492,7 +529,7 @@ func (c *FFmpegClient) logDetectionError(errorMsg string) {
 
 func (c *FFmpegClient) Stop() {
 	log.Println("🛑 Stopping FFmpeg client...")
-	
+
 	// Finish current recording if storage is available
 	if c.storageService != nil && c.currentRecording != nil {
 		// In a real implementation, you'd track the actual file path
@@ -503,15 +540,15 @@ func (c *FFmpegClient) Stop() {
 			log.Printf("✅ Finished recording (ID: %d)", c.currentRecording.ID)
 		}
 	}
-	
+
 	if c.cancel != nil {
 		c.cancel()
 	}
-	
+
 	if c.cmd != nil && c.cmd.Process != nil {
 		c.cmd.Process.Kill()
 	}
-	
+
 	c.wg.Wait()
 	log.Println("✅ FFmpeg client stopped")
 }
