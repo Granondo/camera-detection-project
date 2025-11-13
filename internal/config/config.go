@@ -63,6 +63,13 @@ func Load() (*Config, error) {
 		DatabasePassword: getEnv("DATABASE_PASSWORD", "postgres"),
 		DatabaseName:     getEnv("DATABASE_NAME", "surveillance"),
 		DatabaseSSLMode:  getEnv("DATABASE_SSL_MODE", "disable"),
+
+		DetectionService: DetectionServiceConfig{
+			URL:                 getEnv("DETECTION_SERVICE_URL", "http://detection-service:5000"),
+			Timeout:             getDurationEnv("DETECTION_SERVICE_TIMEOUT", 30*time.Second),
+			MaxRetries:          getIntEnv("DETECTION_SERVICE_MAX_RETRIES", 3),
+			ConfidenceThreshold: getFloatEnv("DETECTION_CONFIDENCE_THRESHOLD", 0.5),
+		},
 	}
 
 	// Create output directory if it doesn't exist
@@ -148,4 +155,13 @@ func maskValue(value string) string {
 		return "(пустое)"
 	}
 	return value[:1] + "***" + value[len(value)-1:]
+}
+
+func getFloatEnv(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatValue
+		}
+	}
+	return defaultValue
 }

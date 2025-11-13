@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"camera-detection-project/internal/camera"
 	"camera-detection-project/internal/config"
@@ -53,6 +54,17 @@ func main() {
 	if err := storageService.UpdateCameraStatus(storage.CameraStatusActive); err != nil {
 		log.Printf("Warning: Could not update camera status: %v", err)
 	}
+
+		go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			if err := storageService.UpdateCameraPing(); err != nil {
+				log.Printf("Warning: Could not update camera ping: %v", err)
+			}
+		}
+	}()
 
 	// Start video processing
 	if err := client.Start(); err != nil {

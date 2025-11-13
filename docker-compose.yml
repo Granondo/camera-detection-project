@@ -18,7 +18,7 @@ services:
     networks:
       - surveillance-network
 
-  # YOLO Detection Service - НОВЫЙ СЕРВИС
+  # YOLO Detection Service
   detection-service:
     build: 
       context: ./detection_service
@@ -33,7 +33,7 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      - ./output:/app/data  # Доступ к кадрам от камеры
+      - ./output:/app/data
     restart: unless-stopped
     networks:
       - surveillance-network
@@ -43,6 +43,7 @@ services:
       timeout: 10s
       retries: 3
   
+  # API Server
   api-server:
     build:
       context: .
@@ -62,7 +63,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./output:/app/output:ro  # read-only доступ к файлам
+      - ./output:/app/output:ro
       - ./logs:/app/logs
     restart: unless-stopped
     networks:
@@ -81,7 +82,7 @@ services:
     container_name: camera-detection
     depends_on:
       - postgres
-      - detection-service  # ДОБАВИТЬ ЗАВИСИМОСТЬ
+      - detection-service
     environment:
       # Camera Configuration
       - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream1}
@@ -94,7 +95,7 @@ services:
       - FFMPEG_PATH=ffmpeg
       - DETECTION_ENABLED=${DETECTION_ENABLED:-true}
       
-      # НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ DETECTION SERVICE:
+      # Detection Service Configuration
       - DETECTION_SERVICE_URL=http://detection-service:5000
       - DETECTION_SERVICE_TIMEOUT=30
       - DETECTION_SERVICE_MAX_RETRIES=3
@@ -116,6 +117,7 @@ services:
     ports:
       - "8090:8080"
 
+  # Svelte UI Development Server
   surveillance-ui:
     build:
       context: ./surveillance-ui
@@ -130,8 +132,9 @@ services:
       - VITE_API_URL=http://localhost:8080
     command: npm run dev -- --host
     networks:
-      - surveillance-network# pgAdmin for database management (optional)
+      - surveillance-network
   
+  # pgAdmin for database management (optional)
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: surveillance-pgadmin
@@ -139,7 +142,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@surveillance.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
-      - "8081:80"  # Изменили порт
+      - "8081:80"
     depends_on:
       - postgres
     volumes:

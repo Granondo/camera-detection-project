@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { systemStore, isCameraOnline } from './lib/stores/systemStore.js';
+  import { systemStore, isCameraOnline, cameraStatusText } from './lib/stores/systemStore.js';
   import { recordingsStore } from './lib/stores/recordingsStore.js';
   import { eventsStore } from './lib/stores/eventsStore.js';
   
@@ -54,7 +54,7 @@
       <div class="header-actions">
         <StatusIndicator 
           online={$isCameraOnline} 
-          label={$isCameraOnline ? 'Camera Online' : 'Camera Offline'} 
+          label={$cameraStatusText} 
         />
         <button class="btn-refresh" on:click={handleRefresh}>
           🔄 Refresh

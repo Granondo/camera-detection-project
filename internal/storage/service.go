@@ -490,3 +490,18 @@ func (s *Service) GetDetectionStats() (map[string]interface{}, error) {
 
 	return stats, nil
 }
+
+// UpdateCameraPing updates camera's last_ping timestamp
+func (s *Service) UpdateCameraPing() error {
+	query := `
+		UPDATE cameras 
+		SET last_ping = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1`
+
+	_, err := s.db.GetConnection().Exec(query, s.defaultCameraID)
+	if err != nil {
+		return fmt.Errorf("failed to update camera ping: %w", err)
+	}
+
+	return nil
+}
