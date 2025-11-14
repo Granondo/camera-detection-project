@@ -17,6 +17,11 @@ services:
     restart: unless-stopped
     networks:
       - surveillance-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Redis Cache
   redis:
@@ -32,7 +37,7 @@ services:
       - surveillance-network
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
       retries: 5
 
@@ -60,9 +65,10 @@ services:
       - surveillance-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   # YOLO Detection Service
   detection-service:
@@ -88,6 +94,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
   
   # API Server
   api-server:
@@ -96,9 +103,12 @@ services:
       dockerfile: Dockerfile.api
     container_name: surveillance-api
     depends_on:
-      - postgres
-      - redis
-      - clickhouse
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     environment:
       - API_PORT=8080
       - DATABASE_HOST=postgres
@@ -138,10 +148,14 @@ services:
       dockerfile: Dockerfile
     container_name: camera-detection
     depends_on:
-      - postgres
-      - redis
-      - clickhouse
-      - detection-service
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      detection-service:
+        condition: service_started
     environment:
       # Camera Configuration
       - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream1}
@@ -216,7 +230,8 @@ services:
     ports:
       - "8081:80"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     restart: unless-stopped
@@ -232,7 +247,8 @@ services:
     ports:
       - "8082:8081"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - surveillance-network
@@ -244,7 +260,8 @@ services:
     ports:
       - "8083:80"
     depends_on:
-      - clickhouse
+      clickhouse:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - surveillance-network

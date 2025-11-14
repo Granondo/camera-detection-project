@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"time"
@@ -36,16 +35,14 @@ func NewClickHouseClient(cfg *ClickHouseConfig) (*ClickHouseClient, error) {
 			Username: cfg.Username,
 			Password: cfg.Password,
 		},
-		DialTimeout: 5 * time.Second,
+		DialTimeout: 10 * time.Second,
 		Compression: &clickhouse.Compression{
 			Method: clickhouse.CompressionLZ4,
 		},
 		Settings: clickhouse.Settings{
 			"max_execution_time": 60,
 		},
-		TLS: &tls.Config{
-			InsecureSkipVerify: true,
-		},
+		// TLS отключен - Docker ClickHouse без SSL
 		Debug: cfg.Debug,
 	})
 
@@ -80,19 +77,19 @@ func (c *ClickHouseClient) Ping() error {
 
 // Detection структура для детекции
 type Detection struct {
-	Timestamp       time.Time
-	CameraID        uint32
-	RecordingID     uint64
-	FrameID         uint64
-	ObjectClass     string
-	Confidence      float32
-	BBoxX1          float32
-	BBoxY1          float32
-	BBoxX2          float32
-	BBoxY2          float32
-	ModelVersion    string
+	Timestamp        time.Time
+	CameraID         uint32
+	RecordingID      uint64
+	FrameID          uint64
+	ObjectClass      string
+	Confidence       float32
+	BBoxX1           float32
+	BBoxY1           float32
+	BBoxX2           float32
+	BBoxY2           float32
+	ModelVersion     string
 	ProcessingTimeMs uint32
-	TrackingID      *string
+	TrackingID       *string
 }
 
 // InsertDetection вставляет детекцию
@@ -326,11 +323,11 @@ func (c *ClickHouseClient) GetTopDetectedObjects(cameraID uint32, days int, limi
 func (c *ClickHouseClient) GetTotalDetectionsCount(cameraID uint32) (uint64, error) {
 	var count uint64
 	query := `SELECT count() FROM detections WHERE camera_id = ?`
-	
+
 	if err := c.conn.QueryRow(c.ctx, query, cameraID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to get total detections count: %w", err)
 	}
-	
+
 	return count, nil
 }
 
@@ -342,10 +339,10 @@ func (c *ClickHouseClient) GetDetectionsCountToday(cameraID uint32) (uint64, err
 		FROM detections 
 		WHERE camera_id = ? AND date = today()
 	`
-	
+
 	if err := c.conn.QueryRow(c.ctx, query, cameraID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to get today's detections count: %w", err)
 	}
-	
+
 	return count, nil
 }
