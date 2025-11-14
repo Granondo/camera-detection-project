@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"camera-detection-project/internal/api"
+	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
 )
@@ -23,6 +24,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ Failed to load configuration: %v", err)
 	}
+
+	redisClient, err := cache.NewRedisClient(&cache.RedisConfig{
+		Host:     cfg.RedisHost,
+		Port:     cfg.RedisPort,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+		TTL:      cfg.RedisCacheTTL,
+	})
+
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to Redis: %v", err)
+	}
+	defer redisClient.Close()
+
+	cacheService := cache.NewCacheService(redisClient)
 
 	// Initialize storage service
 	storageService, err := storage.NewService(cfg)
@@ -39,7 +55,7 @@ func main() {
 	}
 
 	// Create API server
-	apiServer := api.NewServer(storageService, cfg.OutputDir)
+	apiServer := api.NewServerWithCache(storageService, cacheService, cfg.OutputDir)
 
 	// Setup routes
 	mux := http.NewServeMux()

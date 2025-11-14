@@ -36,6 +36,13 @@ type Config struct {
 	DatabaseName     string
 	DatabaseSSLMode  string
 
+	// Redis settings
+	RedisHost     string
+	RedisPort     int
+	RedisPassword string
+	RedisDB       int
+	RedisCacheTTL time.Duration
+
 	// Detection settings
 	DetectionService DetectionServiceConfig
 }
@@ -63,6 +70,12 @@ func Load() (*Config, error) {
 		DatabasePassword: getEnv("DATABASE_PASSWORD", "postgres"),
 		DatabaseName:     getEnv("DATABASE_NAME", "surveillance"),
 		DatabaseSSLMode:  getEnv("DATABASE_SSL_MODE", "disable"),
+
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getIntEnv("REDIS_PORT", 6379),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getIntEnv("REDIS_DB", 0),
+		RedisCacheTTL: getDurationEnv("REDIS_CACHE_TTL", 300*time.Second),
 
 		DetectionService: DetectionServiceConfig{
 			URL:                 getEnv("DETECTION_SERVICE_URL", "http://detection-service:5000"),

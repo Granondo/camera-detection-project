@@ -18,6 +18,24 @@ services:
     networks:
       - surveillance-network
 
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: surveillance-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   # YOLO Detection Service
   detection-service:
     build: 
@@ -51,6 +69,7 @@ services:
     container_name: surveillance-api
     depends_on:
       - postgres
+      - redis
     environment:
       - API_PORT=8080
       - DATABASE_HOST=postgres
@@ -60,6 +79,10 @@ services:
       - DATABASE_NAME=${DATABASE_NAME:-surveillance}
       - DATABASE_SSL_MODE=disable
       - OUTPUT_DIR=/app/output
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - REDIS_DB=0
     ports:
       - "8080:8080"
     volumes:
@@ -82,6 +105,7 @@ services:
     container_name: camera-detection
     depends_on:
       - postgres
+      - redis
       - detection-service
     environment:
       # Camera Configuration
@@ -108,6 +132,12 @@ services:
       - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
       - DATABASE_NAME=${DATABASE_NAME:-surveillance}
       - DATABASE_SSL_MODE=disable
+      
+      # Redis Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - REDIS_DB=0
     volumes:
       - ./output:/app/output
       - ./logs:/app/logs
@@ -151,12 +181,28 @@ services:
     networks:
       - surveillance-network
 
+  # Redis Commander (optional - Redis UI)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: surveillance-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD:-redis_password}
+    ports:
+      - "8082:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
 networks:
   surveillance-network:
     driver: bridge
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
   pgadmin_data:
     driver: local

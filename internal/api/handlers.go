@@ -11,17 +11,30 @@ import (
 	"strings"
 	"time"
 
+	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/storage"
 )
 
 type Server struct {
 	storage   *storage.Service
+	cache     *cache.CacheService
 	outputDir string
 }
 
+// NewServer creates a new API server without cache
 func NewServer(storageService *storage.Service, outputDir string) *Server {
 	return &Server{
 		storage:   storageService,
+		cache:     nil,
+		outputDir: outputDir,
+	}
+}
+
+// NewServerWithCache creates a new API server with cache
+func NewServerWithCache(storageService *storage.Service, cacheService *cache.CacheService, outputDir string) *Server {
+	return &Server{
+		storage:   storageService,
+		cache:     cacheService,
 		outputDir: outputDir,
 	}
 }
@@ -32,6 +45,7 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
 	Message string      `json:"message,omitempty"`
+	Cached  bool        `json:"cached,omitempty"`
 }
 
 type StatusResponse struct {
@@ -87,6 +101,9 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	// Camera
 	mux.HandleFunc("/api/camera", s.corsMiddleware(s.handleCameraInfo))
 
+	// Cache management
+	mux.HandleFunc("/api/cache/clear", s.corsMiddleware(s.handleCacheClear))
+
 	// Static files (if needed)
 	mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(s.outputDir))))
 
@@ -135,23 +152,41 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // Health check endpoint
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	healthData := map[string]interface{}{
+		"timestamp": time.Now(),
+		"version":   "1.0.0",
+		"redis":     s.cache != nil,
+	}
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Message: "API server is running",
-		Data: map[string]interface{}{
-			"timestamp": time.Now(),
-			"version":   "1.0.0",
-		},
+		Data:    healthData,
 	})
 }
 
-// GET /api/status - System status
+// GET /api/status - System status (WITH CACHE)
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
+	// Try to get from cache first
+	if s.cache != nil {
+		if cachedData, err := s.cache.GetSystemStatus(); err == nil {
+			log.Println("✅ Cache HIT: system status")
+			s.jsonResponse(w, http.StatusOK, APIResponse{
+				Success: true,
+				Data:    cachedData,
+				Cached:  true,
+			})
+			return
+		}
+		log.Println("❌ Cache MISS: system status")
+	}
+
+	// Get from database
 	camera, err := s.storage.GetCameraStatus()
 	if err != nil {
 		log.Printf("Error getting camera status: %v", err)
@@ -178,17 +213,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Camera:       camera,
 		Stats:        stats,
 		StorageUsage: storageUsage,
-		Uptime:       "N/A", // TODO: track actual uptime
+		Uptime:       "N/A",
 		LastUpdated:  time.Now(),
+	}
+
+	// Save to cache
+	if s.cache != nil {
+		if err := s.cache.SetSystemStatus(response); err != nil {
+			log.Printf("Warning: failed to cache status: %v", err)
+		}
 	}
 
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    response,
+		Cached:  false,
 	})
 }
 
-// GET /api/recordings?limit=10&camera_id=1
+// GET /api/recordings?limit=10&camera_id=1 (WITH CACHE)
 func (s *Server) handleRecordings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -204,6 +247,20 @@ func (s *Server) handleRecordings(w http.ResponseWriter, r *http.Request) {
 	if camera == nil {
 		s.jsonError(w, http.StatusInternalServerError, "Camera not found")
 		return
+	}
+
+	// Try cache first
+	if s.cache != nil {
+		if cachedData, err := s.cache.GetCachedRecordings(camera.ID); err == nil {
+			log.Println("✅ Cache HIT: recordings")
+			s.jsonResponse(w, http.StatusOK, APIResponse{
+				Success: true,
+				Data:    cachedData,
+				Cached:  true,
+			})
+			return
+		}
+		log.Println("❌ Cache MISS: recordings")
 	}
 
 	recordings, err := s.storage.GetRecordings(camera.ID, limit)
@@ -224,9 +281,17 @@ func (s *Server) handleRecordings(w http.ResponseWriter, r *http.Request) {
 		enrichedRecordings = append(enrichedRecordings, enriched)
 	}
 
+	// Save to cache
+	if s.cache != nil {
+		if err := s.cache.SetCachedRecordings(camera.ID, enrichedRecordings); err != nil {
+			log.Printf("Warning: failed to cache recordings: %v", err)
+		}
+	}
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    enrichedRecordings,
+		Cached:  false,
 	})
 }
 
@@ -462,11 +527,25 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/stats
+// GET /api/stats (WITH CACHE)
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
+	}
+
+	// Try cache first
+	if s.cache != nil {
+		if cachedData, err := s.cache.GetStats(); err == nil {
+			log.Println("✅ Cache HIT: stats")
+			s.jsonResponse(w, http.StatusOK, APIResponse{
+				Success: true,
+				Data:    cachedData,
+				Cached:  true,
+			})
+			return
+		}
+		log.Println("❌ Cache MISS: stats")
 	}
 
 	stats, err := s.storage.GetDatabaseStats()
@@ -475,9 +554,17 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Save to cache
+	if s.cache != nil {
+		if err := s.cache.SetStats(stats); err != nil {
+			log.Printf("Warning: failed to cache stats: %v", err)
+		}
+	}
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    stats,
+		Cached:  false,
 	})
 }
 
@@ -512,6 +599,31 @@ func (s *Server) handleCameraInfo(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    camera,
+	})
+}
+
+// POST /api/cache/clear - Clear all cache
+func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.cache == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "Cache service not available")
+		return
+	}
+
+	if err := s.cache.InvalidateAll(); err != nil {
+		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to clear cache: %v", err))
+		return
+	}
+
+	log.Println("🗑️  Cache cleared")
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: "Cache cleared successfully",
 	})
 }
 
