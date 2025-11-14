@@ -36,6 +36,34 @@ services:
       timeout: 3s
       retries: 5
 
+  # ClickHouse Analytics Database
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: surveillance-clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d/
+    environment:
+      - CLICKHOUSE_DB=surveillance
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # YOLO Detection Service
   detection-service:
     build: 
@@ -70,6 +98,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - clickhouse
     environment:
       - API_PORT=8080
       - DATABASE_HOST=postgres
@@ -83,6 +112,11 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
       - REDIS_DB=0
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
+      - CLICKHOUSE_DATABASE=surveillance
     ports:
       - "8080:8080"
     volumes:
@@ -106,6 +140,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - clickhouse
       - detection-service
     environment:
       # Camera Configuration
@@ -138,6 +173,13 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
       - REDIS_DB=0
+      
+      # ClickHouse Configuration
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
+      - CLICKHOUSE_DATABASE=surveillance
     volumes:
       - ./output:/app/output
       - ./logs:/app/logs
@@ -195,6 +237,18 @@ services:
     networks:
       - surveillance-network
 
+  # Tabix - ClickHouse Web UI (optional)
+  tabix:
+    image: spoonest/clickhouse-tabix-web-client:latest
+    container_name: surveillance-tabix
+    ports:
+      - "8083:80"
+    depends_on:
+      - clickhouse
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
 networks:
   surveillance-network:
     driver: bridge
@@ -203,6 +257,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  clickhouse_data:
     driver: local
   pgadmin_data:
     driver: local

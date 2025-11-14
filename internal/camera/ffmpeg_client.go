@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
 	"github.com/fsnotify/fsnotify"
@@ -55,6 +56,7 @@ type FFmpegClient struct {
 	storageService   StorageService
 	currentRecording *storage.Recording
 	detectionClient  *http.Client
+	analyticsClient  *analytics.ClickHouseClient
 }
 
 // StorageService interface to work with storage package
@@ -94,6 +96,30 @@ func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FF
 		cancel:          cancel,
 		storageService:  storage,
 		detectionClient: detectionClient,
+	}
+
+	return client, nil
+}
+
+// NewFFmpegClientWithStorageAndAnalytics creates client with storage and analytics
+func NewFFmpegClientWithStorageAndAnalytics(
+	cfg *config.Config,
+	storage StorageService,
+	analytics *analytics.ClickHouseClient,
+) (*FFmpegClient, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	detectionClient := &http.Client{
+		Timeout: cfg.DetectionService.Timeout,
+	}
+
+	client := &FFmpegClient{
+		config:          cfg,
+		ctx:             ctx,
+		cancel:          cancel,
+		storageService:  storage,
+		detectionClient: detectionClient,
+		analyticsClient: analytics, // ← ДОБАВЬ ЭТО
 	}
 
 	return client, nil

@@ -43,6 +43,14 @@ type Config struct {
 	RedisDB       int
 	RedisCacheTTL time.Duration
 
+	// ClickHouse settings
+	ClickHouseHost     string
+	ClickHousePort     int
+	ClickHouseDatabase string
+	ClickHouseUsername string
+	ClickHousePassword string
+	ClickHouseDebug    bool
+
 	// Detection settings
 	DetectionService DetectionServiceConfig
 }
@@ -71,11 +79,20 @@ func Load() (*Config, error) {
 		DatabaseName:     getEnv("DATABASE_NAME", "surveillance"),
 		DatabaseSSLMode:  getEnv("DATABASE_SSL_MODE", "disable"),
 
+		// Redis configuration
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
 		RedisPort:     getIntEnv("REDIS_PORT", 6379),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getIntEnv("REDIS_DB", 0),
 		RedisCacheTTL: getDurationEnv("REDIS_CACHE_TTL", 300*time.Second),
+
+		// ClickHouse configuration
+		ClickHouseHost:     getEnv("CLICKHOUSE_HOST", "localhost"),
+		ClickHousePort:     getIntEnv("CLICKHOUSE_PORT", 9000),
+		ClickHouseDatabase: getEnv("CLICKHOUSE_DATABASE", "surveillance"),
+		ClickHouseUsername: getEnv("CLICKHOUSE_USER", "default"),
+		ClickHousePassword: getEnv("CLICKHOUSE_PASSWORD", ""),
+		ClickHouseDebug:    getBoolEnv("CLICKHOUSE_DEBUG", false),
 
 		DetectionService: DetectionServiceConfig{
 			URL:                 getEnv("DETECTION_SERVICE_URL", "http://detection-service:5000"),
