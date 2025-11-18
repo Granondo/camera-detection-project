@@ -8,13 +8,12 @@ import (
 	"syscall"
 	"time"
 
+	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/api"
 	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
 )
-
-// Сохранить как: cmd/api-server/main.go
 
 func main() {
 	log.Println("🚀 Starting Camera Detection API Server...")
@@ -25,6 +24,7 @@ func main() {
 		log.Fatalf("❌ Failed to load configuration: %v", err)
 	}
 
+	// ✅ Initialize Redis
 	redisClient, err := cache.NewRedisClient(&cache.RedisConfig{
 		Host:     cfg.RedisHost,
 		Port:     cfg.RedisPort,
@@ -40,22 +40,56 @@ func main() {
 
 	cacheService := cache.NewCacheService(redisClient)
 
-	// Initialize storage service
+	// ✅ Initialize PostgreSQL storage service
 	storageService, err := storage.NewService(cfg)
 	if err != nil {
 		log.Fatalf("❌ Failed to initialize storage service: %v", err)
 	}
 	defer storageService.Close()
 
-	log.Println("✅ Connected to database")
+	log.Println("✅ Connected to PostgreSQL database")
 
 	// Initialize database tables if needed
 	if err := storageService.InitializeDatabase(); err != nil {
 		log.Printf("⚠️  Warning: Could not initialize database: %v", err)
 	}
 
-	// Create API server
-	apiServer := api.NewServerWithCache(storageService, cacheService, cfg.OutputDir)
+	// ✅ Initialize ClickHouse analytics
+	var clickhouseClient *analytics.ClickHouseClient
+	clickhouseClient, err = analytics.NewClickHouseClient(&analytics.ClickHouseConfig{
+		Host:     cfg.ClickHouseHost,
+		Port:     cfg.ClickHousePort,
+		Database: cfg.ClickHouseDatabase,
+		Username: cfg.ClickHouseUsername,
+		Password: cfg.ClickHousePassword,
+		Debug:    cfg.ClickHouseDebug,
+	})
+	
+	if err != nil {
+		log.Printf("⚠️  Warning: Failed to connect to ClickHouse: %v", err)
+		log.Println("⚠️  Continuing without analytics...")
+		clickhouseClient = nil
+	} else {
+		defer clickhouseClient.Close()
+		log.Println("✅ Connected to ClickHouse database")
+		
+		// Автоматически создать таблицы
+		if err := clickhouseClient.Migrate(); err != nil {
+			log.Printf("⚠️  Warning: ClickHouse migration failed: %v", err)
+		} else {
+			log.Println("✅ ClickHouse tables ready")
+		}
+	}
+
+	// ✅ Create API server with analytics support
+	var apiServer *api.Server
+	if clickhouseClient != nil {
+		apiServer = api.NewServerWithAnalytics(storageService, cacheService, clickhouseClient, cfg.OutputDir)
+		log.Println("✅ API Server initialized with ClickHouse analytics")
+	} else {
+		apiServer = api.NewServerWithCache(storageService, cacheService, cfg.OutputDir)
+		log.Println("✅ API Server initialized without analytics")
+	}
 
 	// Setup routes
 	mux := http.NewServeMux()
@@ -95,6 +129,15 @@ func main() {
 		log.Println("   GET  /api/events           - List events")
 		log.Println("   GET  /api/stats            - Database statistics")
 		log.Println("   GET  /api/camera           - Camera information")
+		
+		if clickhouseClient != nil {
+			log.Println("")
+			log.Println("📊 Analytics endpoints (ClickHouse):")
+			log.Println("   GET  /api/analytics/summary              - Analytics summary")
+			log.Println("   GET  /api/analytics/detections/hourly    - Detections by hour")
+			log.Println("   GET  /api/analytics/top-objects          - Top detected objects")
+			log.Println("   GET  /api/analytics/detections/count     - Total detections count")
+		}
 		log.Println("")
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

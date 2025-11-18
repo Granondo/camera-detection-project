@@ -46,17 +46,19 @@ type BoundingBox struct {
 }
 
 type FFmpegClient struct {
-	config           *config.Config
-	cmd              *exec.Cmd
-	ctx              context.Context
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	frameCount       int
-	mu               sync.Mutex
-	storageService   StorageService
-	currentRecording *storage.Recording
-	detectionClient  *http.Client
-	analyticsClient  *analytics.ClickHouseClient
+	config             *config.Config
+	cmd                *exec.Cmd
+	ctx                context.Context
+	cancel             context.CancelFunc
+	wg                 sync.WaitGroup
+	frameCount         int
+	mu                 sync.Mutex
+	storageService     StorageService
+	currentRecording   *storage.Recording
+	currentRecordingID *int // ← ДОБАВЛЕНО для tracking
+	detectionClient    *http.Client
+	analyticsClient    *analytics.ClickHouseClient
+	cameraID           int // ← ДОБАВЛЕНО для ClickHouse
 }
 
 // StorageService interface to work with storage package
@@ -67,6 +69,7 @@ type StorageService interface {
 	UpdateFrameProcessed(frameID int, hasDetection bool, thumbnailPath *string) error
 	CreateEvent(eventType, severity, title, message string, metadata *string) error
 	UpdateCameraStatus(status string) error
+	GetCameraStatus() (*storage.Camera, error) // ← ДОБАВЛЕНО
 }
 
 // NewFFmpegClient creates a new FFmpeg client without storage
@@ -74,9 +77,10 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &FFmpegClient{
-		config: cfg,
-		ctx:    ctx,
-		cancel: cancel,
+		config:  cfg,
+		ctx:     ctx,
+		cancel:  cancel,
+		cameraID: 1, // default
 	}
 
 	return client, nil
@@ -96,6 +100,7 @@ func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FF
 		cancel:          cancel,
 		storageService:  storage,
 		detectionClient: detectionClient,
+		cameraID:        1, // default
 	}
 
 	return client, nil
@@ -119,7 +124,16 @@ func NewFFmpegClientWithStorageAndAnalytics(
 		cancel:          cancel,
 		storageService:  storage,
 		detectionClient: detectionClient,
-		analyticsClient: analytics, // ← ДОБАВЬ ЭТО
+		analyticsClient: analytics,
+		cameraID:        1, // default
+	}
+
+	// Получить реальный ID камеры из БД
+	if storage != nil {
+		if camera, err := storage.GetCameraStatus(); err == nil && camera != nil {
+			client.cameraID = camera.ID
+			log.Printf("📹 Using camera ID: %d", client.cameraID)
+		}
 	}
 
 	return client, nil
@@ -138,6 +152,7 @@ func (c *FFmpegClient) Start() error {
 			log.Printf("⚠️  Warning: Could not create recording record: %v", err)
 		} else {
 			c.currentRecording = recording
+			c.currentRecordingID = &recording.ID
 			log.Printf("📹 Started recording (ID: %d): %s", recording.ID, recordingPath)
 		}
 	}
@@ -315,12 +330,7 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 
 	// Сохранить в базу данных
 	if c.storageService != nil {
-		var recordingID *int
-		if c.currentRecording != nil {
-			recordingID = &c.currentRecording.ID
-		}
-
-		frame, err := c.storageService.SaveFrame(framePath, recordingID)
+		frame, err := c.storageService.SaveFrame(framePath, c.currentRecordingID)
 		if err != nil {
 			log.Printf("⚠️ Warning: Could not save frame to database: %v", err)
 			return
@@ -335,11 +345,16 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 			frameNum := c.frameCount
 			c.mu.Unlock()
 
-			hasDetection := c.detectObjects(framePath, frameNum)
+			hasDetection, detections := c.detectObjects(framePath, frameNum)
 
 			// Обновить результаты детекции
 			if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
 				log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
+			}
+
+			// ✅ ЛОГИРОВАНИЕ В CLICKHOUSE
+			if hasDetection && len(detections) > 0 && c.analyticsClient != nil {
+				c.logDetectionsToClickHouse(detections, frame.ID, frameNum)
 			}
 		}
 	}
@@ -366,6 +381,12 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 			return
 		}
 
+		// ✅ Обновить текущий recording ID
+		c.mu.Lock()
+		c.currentRecording = recording
+		c.currentRecordingID = &recording.ID
+		c.mu.Unlock()
+
 		// Сразу финализировать запись (т.к. сегмент уже завершен)
 		if err := c.storageService.FinishRecording(recording.ID, videoPath); err != nil {
 			log.Printf("⚠️ Could not finish recording: %v", err)
@@ -376,9 +397,52 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 	}
 }
 
-func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
+// ✅ НОВЫЙ МЕТОД: Логирование детекций в ClickHouse
+func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID int, frameNum int) {
+	if c.analyticsClient == nil {
+		return
+	}
+
+	detectionBatch := make([]analytics.Detection, 0, len(detections))
+	
+	for _, det := range detections {
+		// Получить recording ID (безопасно)
+		var recordingID uint64 = 0
+		c.mu.Lock()
+		if c.currentRecordingID != nil {
+			recordingID = uint64(*c.currentRecordingID)
+		}
+		c.mu.Unlock()
+
+		clickhouseDet := analytics.Detection{
+			Timestamp:        time.Now(),
+			CameraID:         uint32(c.cameraID),
+			RecordingID:      recordingID,
+			FrameID:          uint64(frameID),
+			ObjectClass:      det.Class,
+			Confidence:       float32(det.Confidence),
+			BBoxX1:           float32(det.BBox.X1),
+			BBoxY1:           float32(det.BBox.Y1),
+			BBoxX2:           float32(det.BBox.X2),
+			BBoxY2:           float32(det.BBox.Y2),
+			ModelVersion:     "yolov8n",
+			ProcessingTimeMs: 0, // будет заполнено ниже
+			TrackingID:       nil,
+		}
+		detectionBatch = append(detectionBatch, clickhouseDet)
+	}
+
+	// Batch insert в ClickHouse
+	if err := c.analyticsClient.InsertDetectionsBatch(detectionBatch); err != nil {
+		log.Printf("⚠️  Failed to log detections to ClickHouse: %v", err)
+	} else {
+		log.Printf("✅ Logged %d detections to ClickHouse (Frame #%d)", len(detections), frameNum)
+	}
+}
+
+func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []Detection) {
 	if !c.config.DetectionEnabled {
-		return false
+		return false, nil
 	}
 
 	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
@@ -395,7 +459,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		log.Printf("❌ Failed to marshal detection request: %v", err)
-		return false
+		return false, nil
 	}
 
 	// Отправить запрос к detection service с retry логикой
@@ -447,13 +511,13 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 	if lastErr != nil {
 		log.Printf("❌ All detection attempts failed: %v", lastErr)
 		c.logDetectionError(lastErr.Error())
-		return false
+		return false, nil
 	}
 
 	if !result.Success {
 		log.Printf("❌ Detection failed: %s", result.Error)
 		c.logDetectionError(result.Error)
-		return false
+		return false, nil
 	}
 
 	// Обработать результаты
@@ -475,15 +539,15 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) bool {
 			if c.storageService != nil {
 				c.createDetectionEvent(validDetections, framePath, frameNum)
 			}
-			return true
+			return true, validDetections // ← ВОЗВРАЩАЕМ ДЕТЕКЦИИ
 		} else {
 			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d",
 				c.config.DetectionService.ConfidenceThreshold, frameNum)
-			return false
+			return false, nil
 		}
 	} else {
 		log.Printf("📷 No objects detected in frame #%d (%.1fms)", frameNum, result.ProcessingTimeMS)
-		return false
+		return false, nil
 	}
 }
 

@@ -354,6 +354,43 @@ test-api-full: ## Full API testing suite
 	@echo ""
 	@echo "✅ API tests completed!"
 
+clickhouse-status: ## Check ClickHouse status
+	@echo "📊 ClickHouse Status:"
+	@docker-compose exec clickhouse clickhouse-client -q "SELECT version()"
+	@echo ""
+	@echo "📋 Tables:"
+	@docker-compose exec clickhouse clickhouse-client -q "SHOW TABLES FROM surveillance"
+
+clickhouse-stats: ## Show ClickHouse statistics
+	@echo "📊 ClickHouse Statistics:"
+	@echo ""
+	@echo "🎯 Total Detections:"
+	@docker-compose exec clickhouse clickhouse-client -q "SELECT COUNT(*) FROM surveillance.detections"
+	@echo ""
+	@echo "📅 Detections Today:"
+	@docker-compose exec clickhouse clickhouse-client -q "SELECT COUNT(*) FROM surveillance.detections WHERE date = today()"
+	@echo ""
+	@echo "🏆 Top Objects:"
+	@docker-compose exec clickhouse clickhouse-client -q "\
+		SELECT object_class, COUNT(*) as count, AVG(confidence) as avg_conf \
+		FROM surveillance.detections \
+		GROUP BY object_class \
+		ORDER BY count DESC \
+		LIMIT 10" --format=PrettyCompact
+
+clickhouse-clear: ## Clear all data from ClickHouse
+	@echo "⚠️  Clearing all data from ClickHouse..."
+	@echo "Press Ctrl+C to cancel, or wait 5 seconds..."
+	@sleep 5
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.detections"
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.system_events"
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.system_metrics"
+	@echo "✅ ClickHouse data cleared"
+
+clickhouse-web: ## Open ClickHouse web UI (Tabix)
+	@echo "🌐 Opening Tabix UI..."
+	@open http://localhost:8083 || xdg-open http://localhost:8083 || start http://localhost:8083w
+
 # Open web dashboard
 dashboard: ## Open web dashboard in browser
 	@echo "🌐 Opening dashboard..."

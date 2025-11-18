@@ -11,14 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/storage"
 )
 
 type Server struct {
-	storage   *storage.Service
-	cache     *cache.CacheService
-	outputDir string
+	storage         *storage.Service
+	cache           *cache.CacheService
+	analyticsClient *analytics.ClickHouseClient
+	outputDir       string
 }
 
 // NewServer creates a new API server without cache
@@ -36,6 +38,21 @@ func NewServerWithCache(storageService *storage.Service, cacheService *cache.Cac
 		storage:   storageService,
 		cache:     cacheService,
 		outputDir: outputDir,
+	}
+}
+
+// NewServerWithAnalytics creates a new API server with analytics (ClickHouse)
+func NewServerWithAnalytics(
+	storageService *storage.Service,
+	cacheService *cache.CacheService,
+	analyticsClient *analytics.ClickHouseClient,
+	outputDir string,
+) *Server {
+	return &Server{
+		storage:         storageService,
+		cache:           cacheService,
+		analyticsClient: analyticsClient,
+		outputDir:       outputDir,
 	}
 }
 
@@ -72,6 +89,30 @@ type FrameResponse struct {
 	HasDetection bool           `json:"has_detection"`
 }
 
+// ✅ НОВЫЕ СТРУКТУРЫ ДЛЯ АНАЛИТИКИ
+type DetectionsHourlyResponse struct {
+	Hour            string  `json:"hour"`
+	ObjectClass     string  `json:"object_class"`
+	TotalDetections uint64  `json:"total_detections"`
+	AvgConfidence   float64 `json:"avg_confidence"`
+	MinConfidence   float64 `json:"min_confidence"`
+	MaxConfidence   float64 `json:"max_confidence"`
+}
+
+type TopObjectsResponse struct {
+	ObjectClass     string  `json:"object_class"`
+	TotalDetections uint64  `json:"total_detections"`
+	AvgConfidence   float64 `json:"avg_confidence"`
+}
+
+type AnalyticsSummaryResponse struct {
+	TotalDetections      uint64                   `json:"total_detections"`
+	DetectionsToday      uint64                   `json:"detections_today"`
+	TopObjects           []TopObjectsResponse     `json:"top_objects"`
+	DetectionsByHour     []DetectionsHourlyResponse `json:"detections_by_hour"`
+	ClickHouseAvailable bool                      `json:"clickhouse_available"`
+}
+
 // SetupRoutes configures all API routes
 func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	// Status and Info
@@ -103,6 +144,12 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 
 	// Cache management
 	mux.HandleFunc("/api/cache/clear", s.corsMiddleware(s.handleCacheClear))
+
+	// ✅ НОВЫЕ ЭНДПОИНТЫ ДЛЯ АНАЛИТИКИ
+	mux.HandleFunc("/api/analytics/summary", s.corsMiddleware(s.handleAnalyticsSummary))
+	mux.HandleFunc("/api/analytics/detections/hourly", s.corsMiddleware(s.handleAnalyticsDetectionsHourly))
+	mux.HandleFunc("/api/analytics/top-objects", s.corsMiddleware(s.handleAnalyticsTopObjects))
+	mux.HandleFunc("/api/analytics/detections/count", s.corsMiddleware(s.handleAnalyticsDetectionsCount))
 
 	// Static files (if needed)
 	mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(s.outputDir))))
@@ -153,9 +200,10 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // Health check endpoint
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthData := map[string]interface{}{
-		"timestamp": time.Now(),
-		"version":   "1.0.0",
-		"redis":     s.cache != nil,
+		"timestamp":  time.Now(),
+		"version":    "1.0.0",
+		"redis":      s.cache != nil,
+		"clickhouse": s.analyticsClient != nil,
 	}
 
 	s.jsonResponse(w, http.StatusOK, APIResponse{
@@ -624,6 +672,234 @@ func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Message: "Cache cleared successfully",
+	})
+}
+
+// ✅ НОВЫЕ ОБРАБОТЧИКИ ДЛЯ АНАЛИТИКИ
+
+// GET /api/analytics/summary - Сводка аналитики
+func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.analyticsClient == nil {
+		s.jsonResponse(w, http.StatusOK, APIResponse{
+			Success: true,
+			Data: AnalyticsSummaryResponse{
+				ClickHouseAvailable: false,
+			},
+			Message: "ClickHouse analytics not available",
+		})
+		return
+	}
+
+	camera, _ := s.storage.GetCameraStatus()
+	cameraID := uint32(1)
+	if camera != nil {
+		cameraID = uint32(camera.ID)
+	}
+
+	// Получить общее количество детекций
+	totalDetections, err := s.analyticsClient.GetTotalDetectionsCount(cameraID)
+	if err != nil {
+		log.Printf("Warning: failed to get total detections: %v", err)
+		totalDetections = 0
+	}
+
+	// Получить количество детекций за сегодня
+	detectionsToday, err := s.analyticsClient.GetDetectionsCountToday(cameraID)
+	if err != nil {
+		log.Printf("Warning: failed to get today's detections: %v", err)
+		detectionsToday = 0
+	}
+
+	// Получить топ обнаруженных объектов (за последние 7 дней)
+	topObjects, err := s.analyticsClient.GetTopDetectedObjects(cameraID, 7, 10)
+	if err != nil {
+		log.Printf("Warning: failed to get top objects: %v", err)
+		topObjects = []analytics.TopDetectedObjects{}
+	}
+
+	// Преобразовать в response структуру
+	topObjectsResponse := make([]TopObjectsResponse, 0, len(topObjects))
+	for _, obj := range topObjects {
+		topObjectsResponse = append(topObjectsResponse, TopObjectsResponse{
+			ObjectClass:     obj.ObjectClass,
+			TotalDetections: obj.TotalDetections,
+			AvgConfidence:   obj.AvgConfidence,
+		})
+	}
+
+	// Получить детекции по часам (за последние 24 часа)
+	detectionsByHour, err := s.analyticsClient.GetDetectionsByHour(cameraID, 24)
+	if err != nil {
+		log.Printf("Warning: failed to get detections by hour: %v", err)
+		detectionsByHour = []analytics.DetectionStats{}
+	}
+
+	// Преобразовать в response структуру
+	hourlyResponse := make([]DetectionsHourlyResponse, 0, len(detectionsByHour))
+	for _, stat := range detectionsByHour {
+		hourlyResponse = append(hourlyResponse, DetectionsHourlyResponse{
+			Hour:            stat.Hour.Format("2006-01-02 15:00"),
+			ObjectClass:     stat.ObjectClass,
+			TotalDetections: stat.TotalDetections,
+			AvgConfidence:   stat.AvgConfidence,
+			MinConfidence:   stat.MinConfidence,
+			MaxConfidence:   stat.MaxConfidence,
+		})
+	}
+
+	response := AnalyticsSummaryResponse{
+		TotalDetections:      totalDetections,
+		DetectionsToday:      detectionsToday,
+		TopObjects:           topObjectsResponse,
+		DetectionsByHour:     hourlyResponse,
+		ClickHouseAvailable: true,
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    response,
+	})
+}
+
+// GET /api/analytics/detections/hourly?hours=24
+func (s *Server) handleAnalyticsDetectionsHourly(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.analyticsClient == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "ClickHouse analytics not available")
+		return
+	}
+
+	hours := s.getIntParam(r, "hours", 24)
+	if hours > 168 { // max 7 days
+		hours = 168
+	}
+
+	camera, _ := s.storage.GetCameraStatus()
+	cameraID := uint32(1)
+	if camera != nil {
+		cameraID = uint32(camera.ID)
+	}
+
+	detections, err := s.analyticsClient.GetDetectionsByHour(cameraID, hours)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get detections: %v", err))
+		return
+	}
+
+	// Преобразовать в response структуру
+	response := make([]DetectionsHourlyResponse, 0, len(detections))
+	for _, stat := range detections {
+		response = append(response, DetectionsHourlyResponse{
+			Hour:            stat.Hour.Format("2006-01-02 15:00"),
+			ObjectClass:     stat.ObjectClass,
+			TotalDetections: stat.TotalDetections,
+			AvgConfidence:   stat.AvgConfidence,
+			MinConfidence:   stat.MinConfidence,
+			MaxConfidence:   stat.MaxConfidence,
+		})
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    response,
+	})
+}
+
+// GET /api/analytics/top-objects?days=7&limit=10
+func (s *Server) handleAnalyticsTopObjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.analyticsClient == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "ClickHouse analytics not available")
+		return
+	}
+
+	days := s.getIntParam(r, "days", 7)
+	limit := s.getIntParam(r, "limit", 10)
+
+	if days > 90 {
+		days = 90
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	camera, _ := s.storage.GetCameraStatus()
+	cameraID := uint32(1)
+	if camera != nil {
+		cameraID = uint32(camera.ID)
+	}
+
+	topObjects, err := s.analyticsClient.GetTopDetectedObjects(cameraID, days, limit)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get top objects: %v", err))
+		return
+	}
+
+	// Преобразовать в response структуру
+	response := make([]TopObjectsResponse, 0, len(topObjects))
+	for _, obj := range topObjects {
+		response = append(response, TopObjectsResponse{
+			ObjectClass:     obj.ObjectClass,
+			TotalDetections: obj.TotalDetections,
+			AvgConfidence:   obj.AvgConfidence,
+		})
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    response,
+	})
+}
+
+// GET /api/analytics/detections/count
+func (s *Server) handleAnalyticsDetectionsCount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.analyticsClient == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "ClickHouse analytics not available")
+		return
+	}
+
+	camera, _ := s.storage.GetCameraStatus()
+	cameraID := uint32(1)
+	if camera != nil {
+		cameraID = uint32(camera.ID)
+	}
+
+	totalCount, err := s.analyticsClient.GetTotalDetectionsCount(cameraID)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get count: %v", err))
+		return
+	}
+
+	todayCount, err := s.analyticsClient.GetDetectionsCountToday(cameraID)
+	if err != nil {
+		log.Printf("Warning: failed to get today's count: %v", err)
+		todayCount = 0
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]uint64{
+			"total": totalCount,
+			"today": todayCount,
+		},
 	})
 }
 
