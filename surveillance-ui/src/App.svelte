@@ -8,6 +8,7 @@
   import StatusIndicator from './lib/components/StatusIndicator.svelte';
   import EventCard from './lib/components/EventCard.svelte';
   import LoadingSpinner from './lib/components/LoadingSpinner.svelte';
+  import AnalyticsDashboard from './lib/components/AnalyticsDashboard.svelte';
   
   import { formatBytes } from './lib/utils/formatters.js';
   import './app.css';
@@ -109,6 +110,8 @@
             loading={$systemStore.loading}
           />
         </div>
+
+        <AnalyticsDashboard />
 
         <!-- Two Column Layout -->
         <div class="content-grid">

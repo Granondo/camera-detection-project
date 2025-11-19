@@ -345,7 +345,7 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 			frameNum := c.frameCount
 			c.mu.Unlock()
 
-			hasDetection, detections := c.detectObjects(framePath, frameNum)
+			hasDetection, detections, processingTime := c.detectObjects(framePath, frameNum)
 
 			// Обновить результаты детекции
 			if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
@@ -354,7 +354,7 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 
 			// ✅ ЛОГИРОВАНИЕ В CLICKHOUSE
 			if hasDetection && len(detections) > 0 && c.analyticsClient != nil {
-				c.logDetectionsToClickHouse(detections, frame.ID, frameNum)
+				c.logDetectionsToClickHouse(detections, frame.ID, frameNum, processingTime)
 			}
 		}
 	}
@@ -398,7 +398,7 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 }
 
 // ✅ НОВЫЙ МЕТОД: Логирование детекций в ClickHouse
-func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID int, frameNum int) {
+func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID int, frameNum int, processingTimeMs float64) {
 	if c.analyticsClient == nil {
 		return
 	}
@@ -426,7 +426,7 @@ func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID
 			BBoxX2:           float32(det.BBox.X2),
 			BBoxY2:           float32(det.BBox.Y2),
 			ModelVersion:     "yolov8n",
-			ProcessingTimeMs: 0, // будет заполнено ниже
+			ProcessingTimeMs: uint32(processingTimeMs), // ← ИСПОЛЬЗУЕМ ПАРАМЕТР
 			TrackingID:       nil,
 		}
 		detectionBatch = append(detectionBatch, clickhouseDet)
@@ -436,13 +436,13 @@ func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID
 	if err := c.analyticsClient.InsertDetectionsBatch(detectionBatch); err != nil {
 		log.Printf("⚠️  Failed to log detections to ClickHouse: %v", err)
 	} else {
-		log.Printf("✅ Logged %d detections to ClickHouse (Frame #%d)", len(detections), frameNum)
+		log.Printf("✅ Logged %d detections to ClickHouse (Frame #%d, %.1fms)", len(detections), frameNum, processingTimeMs)
 	}
 }
 
-func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []Detection) {
+func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []Detection, float64) {
 	if !c.config.DetectionEnabled {
-		return false, nil
+		return false, nil, 0
 	}
 
 	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
@@ -459,7 +459,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		log.Printf("❌ Failed to marshal detection request: %v", err)
-		return false, nil
+		return false, nil, 0
 	}
 
 	// Отправить запрос к detection service с retry логикой
@@ -511,13 +511,13 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 	if lastErr != nil {
 		log.Printf("❌ All detection attempts failed: %v", lastErr)
 		c.logDetectionError(lastErr.Error())
-		return false, nil
+		return false, nil, 0
 	}
 
 	if !result.Success {
 		log.Printf("❌ Detection failed: %s", result.Error)
 		c.logDetectionError(result.Error)
-		return false, nil
+		return false, nil, 0
 	}
 
 	// Обработать результаты
@@ -539,15 +539,15 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 			if c.storageService != nil {
 				c.createDetectionEvent(validDetections, framePath, frameNum)
 			}
-			return true, validDetections // ← ВОЗВРАЩАЕМ ДЕТЕКЦИИ
+			return true, validDetections, result.ProcessingTimeMS // ← ВОЗВРАЩАЕМ ДЕТЕКЦИИ
 		} else {
 			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d",
 				c.config.DetectionService.ConfidenceThreshold, frameNum)
-			return false, nil
+			return false, nil, 0
 		}
 	} else {
 		log.Printf("📷 No objects detected in frame #%d (%.1fms)", frameNum, result.ProcessingTimeMS)
-		return false, nil
+		return false, nil, 0
 	}
 }
 
@@ -591,7 +591,7 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 		message += fmt.Sprintf(" (total: %d objects)", len(detections))
 	}
 
-	// Создать событие
+	// Создать событие в PostgreSQL
 	err := c.storageService.CreateEvent(
 		eventType,
 		severity,
@@ -602,6 +602,37 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 
 	if err != nil {
 		log.Printf("⚠️  Failed to create detection event: %v", err)
+		return
+	}
+
+	// Логировать в ClickHouse
+	if c.analyticsClient != nil {
+
+		cameraIDUint32 := uint32(c.cameraID)
+
+		event := &analytics.SystemEvent{
+			Timestamp:   time.Now(),
+			EventType:   eventType,
+			Severity:    severity,
+			Service:     "detection-service",
+			Title:       title,
+			Message:     message,
+			CameraID:    &cameraIDUint32,
+			RecordingID: nil,
+			FrameID:     nil,
+			Metadata:    fmt.Sprintf(`{"frame_number": %d, "detections_count": %d, "max_confidence": %.2f}`, frameNum, len(detections), maxConfidence),
+		}
+
+		c.mu.Lock()
+		if c.currentRecordingID != nil {
+			recordingID := uint64(*c.currentRecordingID)
+			event.RecordingID = &recordingID
+		}
+		c.mu.Unlock()
+
+		if err := c.analyticsClient.InsertSystemEvent(event); err != nil {
+			log.Printf("⚠️  Failed to log event to ClickHouse: %v", err)
+		}
 	}
 }
 
@@ -614,6 +645,28 @@ func (c *FFmpegClient) logDetectionError(errorMsg string) {
 			fmt.Sprintf("Detection service failed: %s", errorMsg),
 			nil,
 		)
+	}
+
+	// Логировать в ClickHouse
+	if c.analyticsClient != nil {
+		cameraIDUint32 := uint32(c.cameraID)
+
+		event := &analytics.SystemEvent{
+			Timestamp:   time.Now(),
+			EventType:   "detection_error",
+			Severity:    "medium",
+			Service:     "detection-service",
+			Title:       "Detection Service Error",
+			Message:     fmt.Sprintf("Detection service failed: %s", errorMsg),
+			CameraID:    &cameraIDUint32,
+			RecordingID: nil,
+			FrameID:     nil,
+			Metadata:    fmt.Sprintf(`{"error": "%s"}`, errorMsg),
+		}
+
+		if err := c.analyticsClient.InsertSystemEvent(event); err != nil {
+			log.Printf("⚠️  Failed to log error to ClickHouse: %v", err)
+		}
 	}
 }
 

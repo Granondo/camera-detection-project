@@ -54,6 +54,9 @@ func main() {
 		if err := clickhouseClient.Migrate(); err != nil {
 			log.Printf("⚠️  Warning: ClickHouse migration failed: %v", err)
 		}
+
+		metricsCollector := analytics.NewMetricsCollector(clickhouseClient, 1)
+		metricsCollector.Start(60 * time.Second)
 	}
 
 	// Create system startup event

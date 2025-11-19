@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/config"
 )
 
@@ -233,6 +234,48 @@ func (s *Service) CreateEvent(eventType, severity, title, message string, metada
 
 	log.Printf("Created event: %s (%s) - %s", eventType, severity, title)
 	return nil
+}
+
+// CreateEventWithAnalytics создает событие в PostgreSQL и логирует в ClickHouse
+func (s *Service) CreateEventWithAnalytics(eventType, severity, title, message string, metadata *string, clickhouseClient interface{}) error {
+	// Сначала сохраняем в PostgreSQL
+	if err := s.CreateEvent(eventType, severity, title, message, metadata); err != nil {
+		return err
+	}
+
+	// Потом логируем в ClickHouse если доступен
+	if clickhouseClient != nil {
+
+		cameraIDUint32 := uint32(s.defaultCameraID)
+		if chClient, ok := clickhouseClient.(ClickHouseLogger); ok {
+			event := &analytics.SystemEvent{
+				Timestamp:   time.Now(),
+				EventType:   eventType,
+				Severity:    severity,
+				Service:     "camera-service",
+				Title:       title,
+				Message:     message,
+				CameraID:    &cameraIDUint32,
+				RecordingID: nil,
+				FrameID:     nil,
+				Metadata:    "{}",
+			}
+			if metadata != nil {
+				event.Metadata = *metadata
+			}
+
+			if err := chClient.InsertSystemEvent(event); err != nil {
+				log.Printf("⚠️  Warning: Could not log event to ClickHouse: %v", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ClickHouseLogger интерфейс для логирования в ClickHouse
+type ClickHouseLogger interface {
+	InsertSystemEvent(event *analytics.SystemEvent) error
 }
 
 // CreateSystemEvent creates a system-level event (no camera association)
