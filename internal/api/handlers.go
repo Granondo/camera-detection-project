@@ -65,11 +65,19 @@ type APIResponse struct {
 	Cached  bool        `json:"cached,omitempty"`
 }
 
+type SystemStats struct {
+	Cameras           int   `json:"cameras"`
+	Recordings        int   `json:"recordings"`
+	Frames            int   `json:"frames"`
+	Detections        int   `json:"detections"`
+	Events            int   `json:"events"`
+	StorageUsageBytes int64 `json:"storage_usage_bytes"`
+}
+
 type StatusResponse struct {
 	SystemStatus string          `json:"system_status"`
 	Camera       *storage.Camera `json:"camera"`
-	Stats        map[string]int  `json:"stats"`
-	StorageUsage int64           `json:"storage_usage_bytes"`
+	Stats        SystemStats     `json:"stats"`
 	Uptime       string          `json:"uptime"`
 	LastUpdated  time.Time       `json:"last_updated"`
 }
@@ -106,11 +114,11 @@ type TopObjectsResponse struct {
 }
 
 type AnalyticsSummaryResponse struct {
-	TotalDetections      uint64                   `json:"total_detections"`
-	DetectionsToday      uint64                   `json:"detections_today"`
-	TopObjects           []TopObjectsResponse     `json:"top_objects"`
-	DetectionsByHour     []DetectionsHourlyResponse `json:"detections_by_hour"`
-	ClickHouseAvailable bool                      `json:"clickhouse_available"`
+	TotalDetections     uint64                     `json:"total_detections"`
+	DetectionsToday     uint64                     `json:"detections_today"`
+	TopObjects          []TopObjectsResponse       `json:"top_objects"`
+	DetectionsByHour    []DetectionsHourlyResponse `json:"detections_by_hour"`
+	ClickHouseAvailable bool                       `json:"clickhouse_available"`
 }
 
 // SetupRoutes configures all API routes
@@ -180,19 +188,19 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if origin == "" {
 			origin = "*"
 		}
-		
+
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Max-Age", "3600")
-		
+
 		// Handle preflight
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next(w, r)
 	}
 }
@@ -249,6 +257,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	storageUsage, err := s.storage.GetStorageUsage()
 	if err != nil {
 		log.Printf("Error getting storage usage: %v", err)
+		storageUsage = 0
+	} else {
+		log.Printf("📊 Storage: %.2f MB", float64(storageUsage)/1024/1024)
 	}
 
 	systemStatus := "online"
@@ -256,11 +267,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		systemStatus = "camera_offline"
 	}
 
+	systemStats := SystemStats{
+		Cameras:           stats["cameras"],
+		Recordings:        stats["recordings"],
+		Frames:            stats["frames"],
+		Detections:        stats["detections"],
+		Events:            stats["events"],
+		StorageUsageBytes: storageUsage, // ✅ правильно типизировано
+	}
+
 	response := StatusResponse{
 		SystemStatus: systemStatus,
 		Camera:       camera,
-		Stats:        stats,
-		StorageUsage: storageUsage,
+		Stats:        systemStats,
 		Uptime:       "N/A",
 		LastUpdated:  time.Now(),
 	}
@@ -753,10 +772,10 @@ func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request) 
 	}
 
 	response := AnalyticsSummaryResponse{
-		TotalDetections:      totalDetections,
-		DetectionsToday:      detectionsToday,
-		TopObjects:           topObjectsResponse,
-		DetectionsByHour:     hourlyResponse,
+		TotalDetections:     totalDetections,
+		DetectionsToday:     detectionsToday,
+		TopObjects:          topObjectsResponse,
+		DetectionsByHour:    hourlyResponse,
 		ClickHouseAvailable: true,
 	}
 
