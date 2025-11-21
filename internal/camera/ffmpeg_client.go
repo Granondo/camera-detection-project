@@ -18,6 +18,7 @@ import (
 
 	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/config"
+	"camera-detection-project/internal/queue"
 	"camera-detection-project/internal/storage"
 	"github.com/fsnotify/fsnotify"
 )
@@ -58,6 +59,7 @@ type FFmpegClient struct {
 	currentRecordingID *int // ← ДОБАВЛЕНО для tracking
 	detectionClient    *http.Client
 	analyticsClient    *analytics.ClickHouseClient
+	queueClient        *queue.RabbitMQClient
 	cameraID           int // ← ДОБАВЛЕНО для ClickHouse
 }
 
@@ -77,9 +79,9 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &FFmpegClient{
-		config:  cfg,
-		ctx:     ctx,
-		cancel:  cancel,
+		config:   cfg,
+		ctx:      ctx,
+		cancel:   cancel,
 		cameraID: 1, // default
 	}
 
@@ -111,6 +113,7 @@ func NewFFmpegClientWithStorageAndAnalytics(
 	cfg *config.Config,
 	storage StorageService,
 	analytics *analytics.ClickHouseClient,
+	queueClient *queue.RabbitMQClient,
 ) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -125,6 +128,7 @@ func NewFFmpegClientWithStorageAndAnalytics(
 		storageService:  storage,
 		detectionClient: detectionClient,
 		analyticsClient: analytics,
+		queueClient:     queueClient,
 		cameraID:        1, // default
 	}
 
@@ -338,24 +342,59 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 
 		log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
 
-		// Запустить детекцию если включена
-		if c.config.DetectionEnabled {
-			c.mu.Lock()
-			c.frameCount++
-			frameNum := c.frameCount
-			c.mu.Unlock()
+		c.mu.Lock()
+		c.frameCount++
+		frameNum := c.frameCount
+		c.mu.Unlock()
 
-			hasDetection, detections, processingTime := c.detectObjects(framePath, frameNum)
-
-			// Обновить результаты детекции
-			if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
-				log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
+		// ✅ РЕЖИМ 1: RabbitMQ включен - асинхронная обработка
+		if c.config.RabbitMQEnabled && c.queueClient != nil {
+			// Публикуем задачу на детекцию в RabbitMQ
+			frameMsg := queue.FrameMessage{
+				FrameID:     frame.ID,
+				RecordingID: c.currentRecordingID,
+				CameraID:    int(c.cameraID),
+				FilePath:    framePath,
+				Timestamp:   frame.Timestamp,
+				FrameNumber: frameNum,
 			}
 
-			// ✅ ЛОГИРОВАНИЕ В CLICKHOUSE
-			if hasDetection && len(detections) > 0 && c.analyticsClient != nil {
-				c.logDetectionsToClickHouse(detections, frame.ID, frameNum, processingTime)
+			err := c.queueClient.Publish(
+				queue.ExchangeFrames,
+				queue.RoutingKeyDetect,
+				frameMsg,
+			)
+
+			if err != nil {
+				log.Printf("❌ Failed to publish frame to RabbitMQ: %v", err)
+				// Fallback на синхронную обработку
+				log.Printf("⚠️  Falling back to synchronous detection...")
+				c.processFrameSync(frame, framePath, frameNum)
+			} else {
+				log.Printf("✅ Frame #%d published to RabbitMQ (ID: %d)", frameNum, frame.ID)
 			}
+		} else {
+			// ✅ РЕЖИМ 2: RabbitMQ отключен - синхронная обработка (старый способ)
+			log.Printf("🔄 Processing frame #%d synchronously (RabbitMQ disabled)", frameNum)
+			c.processFrameSync(frame, framePath, frameNum)
+		}
+	}
+}
+
+// processFrameSync синхронная обработка кадра (старый способ без RabbitMQ)
+func (c *FFmpegClient) processFrameSync(frame *storage.Frame, framePath string, frameNum int) {
+	if c.config.DetectionEnabled {
+		// Запустить детекцию (HTTP вызов к detection service)
+		hasDetection, detections, processingTime := c.detectObjects(framePath, frameNum)
+
+		// Обновить результаты детекции в PostgreSQL
+		if err := c.storageService.UpdateFrameProcessed(frame.ID, hasDetection, nil); err != nil {
+			log.Printf("⚠️ Warning: Could not update frame processed status: %v", err)
+		}
+
+		// Логирование в ClickHouse (если есть детекции)
+		if hasDetection && len(detections) > 0 && c.analyticsClient != nil {
+			c.logDetectionsToClickHouse(detections, frame.ID, frameNum, processingTime)
 		}
 	}
 }
@@ -404,7 +443,7 @@ func (c *FFmpegClient) logDetectionsToClickHouse(detections []Detection, frameID
 	}
 
 	detectionBatch := make([]analytics.Detection, 0, len(detections))
-	
+
 	for _, det := range detections {
 		// Получить recording ID (безопасно)
 		var recordingID uint64 = 0

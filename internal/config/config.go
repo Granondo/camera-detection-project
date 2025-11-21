@@ -1,8 +1,8 @@
 package config
 
 import (
-	"log"
 	"bufio"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -10,24 +10,24 @@ import (
 )
 
 type DetectionServiceConfig struct {
-    URL               string
-    Timeout           time.Duration
-    MaxRetries        int
-    ConfidenceThreshold float64
+	URL                 string
+	Timeout             time.Duration
+	MaxRetries          int
+	ConfidenceThreshold float64
 }
 
 type Config struct {
 	// Camera settings
-	RTSPURL         string
-	Username        string
-	Password        string
-	CameraTimeout   time.Duration
-	FrameRate       int
-	SaveFrames      bool
-	OutputDir       string
-	FFmpegPath      string
+	RTSPURL          string
+	Username         string
+	Password         string
+	CameraTimeout    time.Duration
+	FrameRate        int
+	SaveFrames       bool
+	OutputDir        string
+	FFmpegPath       string
 	DetectionEnabled bool
-	
+
 	// Database settings
 	DatabaseHost     string
 	DatabasePort     int
@@ -50,6 +50,14 @@ type Config struct {
 	ClickHouseUsername string
 	ClickHousePassword string
 	ClickHouseDebug    bool
+
+	// RabbitMQ settings
+	RabbitMQHost     string
+	RabbitMQPort     int
+	RabbitMQUser     string
+	RabbitMQPassword string
+	RabbitMQVHost    string
+	RabbitMQEnabled  bool
 
 	// Detection settings
 	DetectionService DetectionServiceConfig
@@ -93,6 +101,14 @@ func Load() (*Config, error) {
 		ClickHouseUsername: getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword: getEnv("CLICKHOUSE_PASSWORD", ""),
 		ClickHouseDebug:    getBoolEnv("CLICKHOUSE_DEBUG", false),
+
+		// RabbitMQ configuration
+		RabbitMQHost:     getEnv("RABBITMQ_HOST", "localhost"),
+		RabbitMQPort:     getIntEnv("RABBITMQ_PORT", 5672),
+		RabbitMQUser:     getEnv("RABBITMQ_USER", "admin"),
+		RabbitMQPassword: getEnv("RABBITMQ_PASSWORD", "rabbitmq_password"),
+		RabbitMQVHost:    getEnv("RABBITMQ_VHOST", "/"),
+		RabbitMQEnabled:  getBoolEnv("RABBITMQ_ENABLED", true),
 
 		DetectionService: DetectionServiceConfig{
 			URL:                 getEnv("DETECTION_SERVICE_URL", "http://detection-service:5000"),

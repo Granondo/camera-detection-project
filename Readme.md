@@ -139,6 +139,52 @@ make clickhouse-clear
 
 # Открыть веб-интерфейс
 make clickhouse-web
+
+## 🐰 RabbitMQ Message Queue
+
+Система использует RabbitMQ для асинхронной обработки кадров:
+
+### Преимущества:
+- ✅ Асинхронная обработка - камера не ждет детекцию
+- ✅ Масштабирование - можно запустить несколько workers
+- ✅ Retry механизм - автоматические повторы при ошибках
+- ✅ Dead Letter Queue - failed задачи не теряются
+- ✅ Load balancing - равномерное распределение нагрузки
+
+### Очереди:
+- `frames.to.detect` - кадры на детекцию
+- `frames.to.detect.dlq` - failed кадры (Dead Letter Queue)
+- `events.notifications` - события для уведомлений
+
+### Команды:
+```bash
+# Открыть Web UI
+make rabbitmq-ui
+# http://localhost:15672
+# Username: admin
+# Password: rabbitmq_password
+
+# Посмотреть статус очередей
+make rabbitmq-queues
+
+# Очистить очереди
+make rabbitmq-clear
+
+# Масштабировать workers (запустить 5 штук)
+make worker-scale N=5
+
+# Логи workers
+make worker-logs
+```
+
+### Отключение RabbitMQ:
+
+Если хотите использовать синхронную обработку (как раньше):
+```bash
+# В .env установите:
+RABBITMQ_ENABLED=false
+```
+
 ```
 
 ## 🏗️ Архитектура проекта

@@ -6,6 +6,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/lib/pq v1.10.9
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/redis/go-redis/v9 v9.16.0
 )
 

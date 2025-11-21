@@ -41,6 +41,29 @@ services:
       timeout: 3s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: surveillance-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_DEFAULT_VHOST=/
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   # ClickHouse Analytics Database
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -95,6 +118,57 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  detection-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      detection-service:
+        condition: service_started
+    environment:
+      # Database
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-surveillance}
+      - DATABASE_SSL_MODE=disable
+      
+      # RabbitMQ
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_VHOST=/
+      - RABBITMQ_ENABLED=true
+      
+      # Detection Service
+      - DETECTION_SERVICE_URL=http://detection-service:5000
+      - DETECTION_SERVICE_TIMEOUT=30
+      - DETECTION_CONFIDENCE_THRESHOLD=0.5
+      
+      # ClickHouse
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
+      - CLICKHOUSE_DATABASE=surveillance
+      
+      - OUTPUT_DIR=/app/output
+    volumes:
+      - ./output:/app/output:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    # Можно запустить несколько workers для параллельной обработки
+    deploy:
+      replicas: 2
   
   # API Server
   api-server:
@@ -282,4 +356,6 @@ volumes:
   camera_output:
     driver: local
   camera_logs:
+    driver: local
+  rabbitmq_data:
     driver: local

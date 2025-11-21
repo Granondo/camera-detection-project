@@ -7,10 +7,11 @@ import (
 	"syscall"
 	"time"
 
-	"camera-detection-project/internal/analytics"  // ← ДОБАВЬ ЭТОТ ИМПОРТ
+	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/camera"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
+	"camera-detection-project/internal/queue"
 )
 
 func main() {
@@ -54,9 +55,26 @@ func main() {
 		if err := clickhouseClient.Migrate(); err != nil {
 			log.Printf("⚠️  Warning: ClickHouse migration failed: %v", err)
 		}
+	}
 
-		metricsCollector := analytics.NewMetricsCollector(clickhouseClient, 1)
-		metricsCollector.Start(60 * time.Second)
+	var queueClient *queue.RabbitMQClient
+	if cfg.RabbitMQEnabled {
+		queueClient, err = queue.NewRabbitMQClient(&queue.RabbitMQConfig{
+			Host:     cfg.RabbitMQHost,
+			Port:     cfg.RabbitMQPort,
+			User:     cfg.RabbitMQUser,
+			Password: cfg.RabbitMQPassword,
+			VHost:    cfg.RabbitMQVHost,
+		})
+
+		if err != nil {
+			log.Printf("⚠️  Warning: Failed to connect to RabbitMQ: %v", err)
+			log.Println("⚠️  Continuing without RabbitMQ (sync detection mode)...")
+			queueClient = nil
+		} else {
+			defer queueClient.Close()
+			log.Println("✅ Connected to RabbitMQ")
+		}
 	}
 
 	// Create system startup event
@@ -87,7 +105,7 @@ func main() {
 	}
 
 	// Create camera client with storage and analytics
-	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient)
+	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient, queueClient)
 	if err != nil {
 		log.Fatalf("❌ Failed to create camera client: %v", err)
 	}

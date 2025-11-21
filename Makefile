@@ -391,6 +391,40 @@ clickhouse-web: ## Open ClickHouse web UI (Tabix)
 	@echo "🌐 Opening Tabix UI..."
 	@open http://localhost:8083 || xdg-open http://localhost:8083 || start http://localhost:8083w
 
+# RabbitMQ commands
+rabbitmq-status: ## Check RabbitMQ status
+	@echo "🐰 RabbitMQ Status:"
+	@docker-compose exec rabbitmq rabbitmqctl status
+
+rabbitmq-ui: ## Open RabbitMQ Management UI
+	@echo "🌐 Opening RabbitMQ Management UI..."
+	@open http://localhost:15672 || xdg-open http://localhost:15672 || start http://localhost:15672
+	@echo "   Username: admin"
+	@echo "   Password: rabbitmq_password"
+
+rabbitmq-queues: ## Show RabbitMQ queues
+	@echo "📋 RabbitMQ Queues:"
+	@docker-compose exec rabbitmq rabbitmqctl list_queues name messages consumers
+
+rabbitmq-clear: ## Clear all messages from queues
+	@echo "⚠️  Clearing all messages from RabbitMQ queues..."
+	@docker-compose exec rabbitmq rabbitmqctl purge_queue frames.to.detect
+	@docker-compose exec rabbitmq rabbitmqctl purge_queue frames.to.detect.dlq
+	@echo "✅ Queues cleared"
+
+# Detection Worker commands
+worker-logs: ## Show detection worker logs
+	@echo "📋 Detection Worker Logs:"
+	@docker-compose logs -f detection-worker
+
+worker-scale: ## Scale detection workers (usage: make worker-scale N=5)
+	@echo "⚖️  Scaling detection workers to $(N)..."
+	@docker-compose up -d --scale detection-worker=$(N)
+
+worker-restart: ## Restart detection workers
+	@echo "🔄 Restarting detection workers..."
+	@docker-compose restart detection-worker
+
 # Open web dashboard
 dashboard: ## Open web dashboard in browser
 	@echo "🌐 Opening dashboard..."
