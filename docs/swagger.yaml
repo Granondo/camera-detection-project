@@ -1,0 +1,566 @@
+basePath: /api
+definitions:
+  api.APIResponse:
+    properties:
+      cached:
+        type: boolean
+      data: {}
+      error:
+        type: string
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  api.AnalyticsSummaryResponse:
+    properties:
+      clickhouse_available:
+        type: boolean
+      detections_by_hour:
+        items:
+          $ref: '#/definitions/api.DetectionsHourlyResponse'
+        type: array
+      detections_today:
+        type: integer
+      top_objects:
+        items:
+          $ref: '#/definitions/api.TopObjectsResponse'
+        type: array
+      total_detections:
+        type: integer
+    type: object
+  api.DetectionsHourlyResponse:
+    properties:
+      avg_confidence:
+        type: number
+      hour:
+        type: string
+      max_confidence:
+        type: number
+      min_confidence:
+        type: number
+      object_class:
+        type: string
+      total_detections:
+        type: integer
+    type: object
+  api.FrameResponse:
+    properties:
+      file_exists:
+        type: boolean
+      frame:
+        $ref: '#/definitions/storage.Frame'
+      has_detection:
+        type: boolean
+      image_url:
+        type: string
+      thumbnail_url:
+        type: string
+    type: object
+  api.RecordingResponse:
+    properties:
+      download_url:
+        type: string
+      file_exists:
+        type: boolean
+      recording:
+        $ref: '#/definitions/storage.Recording'
+      stream_url:
+        type: string
+    type: object
+  api.StatusResponse:
+    properties:
+      camera:
+        $ref: '#/definitions/storage.Camera'
+      last_updated:
+        type: string
+      stats:
+        $ref: '#/definitions/api.SystemStats'
+      system_status:
+        type: string
+      uptime:
+        type: string
+    type: object
+  api.SystemStats:
+    properties:
+      cameras:
+        type: integer
+      detections:
+        type: integer
+      events:
+        type: integer
+      frames:
+        type: integer
+      recordings:
+        type: integer
+      storage_usage_bytes:
+        type: integer
+    type: object
+  api.TopObjectsResponse:
+    properties:
+      avg_confidence:
+        type: number
+      object_class:
+        type: string
+      total_detections:
+        type: integer
+    type: object
+  storage.Camera:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      last_ping:
+        type: string
+      name:
+        type: string
+      rtsp_url:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      username:
+        type: string
+    type: object
+  storage.Event:
+    properties:
+      camera_id:
+        type: integer
+      created_at:
+        type: string
+      event_type:
+        description: motion, person_detected, system_error, etc
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      metadata:
+        description: JSON with additional data
+        type: string
+      notified:
+        type: boolean
+      resolved:
+        type: boolean
+      resolved_at:
+        type: string
+      severity:
+        description: low, medium, high, critical
+        type: string
+      timestamp:
+        type: string
+      title:
+        type: string
+    type: object
+  storage.Frame:
+    properties:
+      camera_id:
+        type: integer
+      created_at:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      has_detection:
+        type: boolean
+      height:
+        type: integer
+      id:
+        type: integer
+      processed:
+        type: boolean
+      recording_id:
+        description: Can be null for standalone frames
+        type: integer
+      thumbnail_path:
+        type: string
+      timestamp:
+        type: string
+      width:
+        type: integer
+    type: object
+  storage.Recording:
+    properties:
+      archived_at:
+        type: string
+      camera_id:
+        type: integer
+      codec:
+        description: h264, h265, etc
+        type: string
+      created_at:
+        type: string
+      duration:
+        description: seconds
+        type: integer
+      end_time:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: integer
+      quality:
+        description: 1080p, 720p, etc
+        type: string
+      start_time:
+        type: string
+      status:
+        description: recording, completed, failed
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API для системы видеонаблюдения с YOLO детекцией
+  title: Camera Surveillance API
+  version: "1.0"
+paths:
+  /analytics/detections/hourly:
+    get:
+      consumes:
+      - application/json
+      description: Получить детекции по часам
+      parameters:
+      - default: 24
+        description: Hours to look back
+        in: query
+        maximum: 168
+        minimum: 1
+        name: hours
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/api.DetectionsHourlyResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get detections by hour
+      tags:
+      - analytics
+  /analytics/summary:
+    get:
+      consumes:
+      - application/json
+      description: Получить сводку аналитики из ClickHouse
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.AnalyticsSummaryResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get analytics summary
+      tags:
+      - analytics
+  /analytics/top-objects:
+    get:
+      consumes:
+      - application/json
+      description: Получить топ обнаруженных объектов
+      parameters:
+      - default: 7
+        description: Days to look back
+        in: query
+        maximum: 90
+        minimum: 1
+        name: days
+        type: integer
+      - default: 10
+        description: Limit
+        in: query
+        maximum: 50
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/api.TopObjectsResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get top detected objects
+      tags:
+      - analytics
+  /cache/clear:
+    post:
+      consumes:
+      - application/json
+      description: Очистить весь кэш Redis
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Clear cache
+      tags:
+      - system
+  /camera:
+    get:
+      consumes:
+      - application/json
+      description: Получить информацию о камере
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/storage.Camera'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get camera information
+      tags:
+      - camera
+  /events:
+    get:
+      consumes:
+      - application/json
+      description: Получить список событий системы
+      parameters:
+      - default: 20
+        description: Limit
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/storage.Event'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get events list
+      tags:
+      - events
+  /frames:
+    get:
+      consumes:
+      - application/json
+      description: Получить список кадров
+      parameters:
+      - default: 50
+        description: Limit
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Filter by detection
+        in: query
+        name: has_detection
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/api.FrameResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get frames list
+      tags:
+      - frames
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Проверка работоспособности API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Health check
+      tags:
+      - system
+  /recordings:
+    get:
+      consumes:
+      - application/json
+      description: Получить список видеозаписей
+      parameters:
+      - default: 20
+        description: Limit
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/api.RecordingResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get recordings list
+      tags:
+      - recordings
+  /recordings/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Получить информацию о конкретной записи
+      parameters:
+      - description: Recording ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.RecordingResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get recording by ID
+      tags:
+      - recordings
+  /stats:
+    get:
+      consumes:
+      - application/json
+      description: Получить статистику базы данных
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: integer
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get database statistics
+      tags:
+      - system
+  /status:
+    get:
+      consumes:
+      - application/json
+      description: Получить полный статус системы видеонаблюдения
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.StatusResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.APIResponse'
+      summary: Get system status
+      tags:
+      - system
+swagger: "2.0"

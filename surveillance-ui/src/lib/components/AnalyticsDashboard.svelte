@@ -24,7 +24,8 @@
     error = null;
     
     try {
-      const response = await api.request('/api/analytics/summary');
+      const response = await api.getAnalyticsSummary();
+
       
       if (response && response.success && response.data) {
         summary = response.data;

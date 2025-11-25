@@ -438,6 +438,18 @@ logs-api: ## Show API server logs
 		echo "No API logs found. API server might not be running."; \
 	fi
 
+## Generate Swagger docs
+swagger: 
+	swag init -g cmd/api_service/main.go -o docs
+	swagger2openapi docs/swagger.json -o docs/openapi.json
+
+## Generate TypeScript types
+ts-types: 
+	cd surveillance-ui && npm run generate:types:local
+
+## Start API with fresh types	
+api-with-types: swagger api-dev 
+
 # Quick demo
 demo: db-start ## Quick demo with sample data
 	@echo "🎭 Starting demo..."

@@ -205,7 +205,14 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// Health check endpoint
+// GetHealth godoc
+// @Summary Health check
+// @Description Проверка работоспособности API
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse
+// @Router /health [get]
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthData := map[string]interface{}{
 		"timestamp":  time.Now(),
@@ -221,7 +228,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/status - System status (WITH CACHE)
+// GetStatus godoc
+// @Summary Get system status
+// @Description Получить полный статус системы видеонаблюдения
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse{data=StatusResponse}
+// @Failure 500 {object} APIResponse
+// @Router /status [get]
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -298,7 +313,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/recordings?limit=10&camera_id=1 (WITH CACHE)
+// GetRecordings godoc
+// @Summary Get recordings list
+// @Description Получить список видеозаписей
+// @Tags recordings
+// @Accept json
+// @Produce json
+// @Param limit query int false "Limit" default(20) minimum(1) maximum(100)
+// @Success 200 {object} APIResponse{data=[]RecordingResponse}
+// @Failure 500 {object} APIResponse
+// @Router /recordings [get]
 func (s *Server) handleRecordings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -362,7 +386,16 @@ func (s *Server) handleRecordings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/recordings/{id}
+// GetRecordingByID godoc
+// @Summary Get recording by ID
+// @Description Получить информацию о конкретной записи
+// @Tags recordings
+// @Accept json
+// @Produce json
+// @Param id path int true "Recording ID"
+// @Success 200 {object} APIResponse{data=RecordingResponse}
+// @Failure 404 {object} APIResponse
+// @Router /recordings/{id} [get]
 func (s *Server) handleRecordingByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -442,7 +475,17 @@ func (s *Server) handleVideoDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, recording.FilePath)
 }
 
-// GET /api/frames?limit=50&has_detection=true
+// GetFrames godoc
+// @Summary Get frames list
+// @Description Получить список кадров
+// @Tags frames
+// @Accept json
+// @Produce json
+// @Param limit query int false "Limit" default(50) minimum(1) maximum(200)
+// @Param has_detection query bool false "Filter by detection"
+// @Success 200 {object} APIResponse{data=[]FrameResponse}
+// @Failure 500 {object} APIResponse
+// @Router /frames [get]
 func (s *Server) handleFrames(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -570,7 +613,16 @@ func (s *Server) handleImageServe(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
-// GET /api/events?limit=20&severity=high
+// GetEvents godoc
+// @Summary Get events list
+// @Description Получить список событий системы
+// @Tags events
+// @Accept json
+// @Produce json
+// @Param limit query int false "Limit" default(20) minimum(1) maximum(100)
+// @Success 200 {object} APIResponse{data=[]storage.Event}
+// @Failure 500 {object} APIResponse
+// @Router /events [get]
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -594,7 +646,15 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/stats (WITH CACHE)
+// GetStats godoc
+// @Summary Get database statistics
+// @Description Получить статистику базы данных
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse{data=map[string]int}
+// @Failure 500 {object} APIResponse
+// @Router /stats [get]
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -650,7 +710,15 @@ func (s *Server) handleDailyStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/camera
+// GetCameraInfo godoc
+// @Summary Get camera information
+// @Description Получить информацию о камере
+// @Tags camera
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse{data=storage.Camera}
+// @Failure 500 {object} APIResponse
+// @Router /camera [get]
 func (s *Server) handleCameraInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -669,7 +737,15 @@ func (s *Server) handleCameraInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/cache/clear - Clear all cache
+// ClearCache godoc
+// @Summary Clear cache
+// @Description Очистить весь кэш Redis
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse
+// @Failure 503 {object} APIResponse
+// @Router /cache/clear [post]
 func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -696,7 +772,15 @@ func (s *Server) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 
 // ✅ НОВЫЕ ОБРАБОТЧИКИ ДЛЯ АНАЛИТИКИ
 
-// GET /api/analytics/summary - Сводка аналитики
+// GetAnalyticsSummary godoc
+// @Summary Get analytics summary
+// @Description Получить сводку аналитики из ClickHouse
+// @Tags analytics
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse{data=AnalyticsSummaryResponse}
+// @Failure 500 {object} APIResponse
+// @Router /analytics/summary [get]
 func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -785,7 +869,16 @@ func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// GET /api/analytics/detections/hourly?hours=24
+// GetAnalyticsDetectionsHourly godoc
+// @Summary Get detections by hour
+// @Description Получить детекции по часам
+// @Tags analytics
+// @Accept json
+// @Produce json
+// @Param hours query int false "Hours to look back" default(24) minimum(1) maximum(168)
+// @Success 200 {object} APIResponse{data=[]DetectionsHourlyResponse}
+// @Failure 500 {object} APIResponse
+// @Router /analytics/detections/hourly [get]
 func (s *Server) handleAnalyticsDetectionsHourly(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -833,7 +926,17 @@ func (s *Server) handleAnalyticsDetectionsHourly(w http.ResponseWriter, r *http.
 	})
 }
 
-// GET /api/analytics/top-objects?days=7&limit=10
+// GetAnalyticsTopObjects godoc
+// @Summary Get top detected objects
+// @Description Получить топ обнаруженных объектов
+// @Tags analytics
+// @Accept json
+// @Produce json
+// @Param days query int false "Days to look back" default(7) minimum(1) maximum(90)
+// @Param limit query int false "Limit" default(10) minimum(1) maximum(50)
+// @Success 200 {object} APIResponse{data=[]TopObjectsResponse}
+// @Failure 500 {object} APIResponse
+// @Router /analytics/top-objects [get]
 func (s *Server) handleAnalyticsTopObjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")

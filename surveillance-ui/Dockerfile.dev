@@ -1,16 +1,21 @@
 FROM node:22-alpine
 
+# Установка pnpm
+RUN npm install -g pnpm
+
 WORKDIR /app
 
-# Копируем только package файлы
-COPY package*.json ./
+# Копируем файлы для установки зависимостей
+COPY package.json pnpm-lock.yaml ./
 
 # Устанавливаем зависимости
-RUN npm install
+RUN pnpm install
 
-# Копируем остальные файлы (node_modules будет игнорироваться через .dockerignore)
+# Копируем остальные файлы
 COPY . .
 
+# Открываем порт
 EXPOSE 5173
 
-CMD ["npm", "run", "dev", "--", "--host"]
+# Запуск dev сервера
+CMD ["pnpm", "run", "dev", "--", "--host"]

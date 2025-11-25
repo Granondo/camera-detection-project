@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+
+    "generate:types": "openapi-typescript http://localhost:8080/swagger/doc.json -o src/lib/types/api.d.ts",
+    "generate:types:local": "openapi-typescript ../docs/openapi.json -o src/lib/types/api.d.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "openapi-typescript": "^7.4.1",
     "svelte": "^5.43.5",
     "vite": "^7.2.2"
   },

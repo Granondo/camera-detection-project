@@ -1,3 +1,8 @@
+// @title Camera Surveillance API
+// @version 1.0
+// @description API для системы видеонаблюдения с YOLO детекцией
+// @host localhost:8080
+// @BasePath /api
 package main
 
 import (
@@ -13,6 +18,9 @@ import (
 	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/config"
 	"camera-detection-project/internal/storage"
+
+	_ "camera-detection-project/docs" // swagger docs
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func main() {
@@ -64,7 +72,7 @@ func main() {
 		Password: cfg.ClickHousePassword,
 		Debug:    cfg.ClickHouseDebug,
 	})
-	
+
 	if err != nil {
 		log.Printf("⚠️  Warning: Failed to connect to ClickHouse: %v", err)
 		log.Println("⚠️  Continuing without analytics...")
@@ -72,7 +80,7 @@ func main() {
 	} else {
 		defer clickhouseClient.Close()
 		log.Println("✅ Connected to ClickHouse database")
-		
+
 		// Автоматически создать таблицы
 		if err := clickhouseClient.Migrate(); err != nil {
 			log.Printf("⚠️  Warning: ClickHouse migration failed: %v", err)
@@ -94,6 +102,10 @@ func main() {
 	// Setup routes
 	mux := http.NewServeMux()
 	apiServer.SetupRoutes(mux)
+
+	mux.HandleFunc("/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("http://localhost:8080/swagger/doc.json"),
+	))
 
 	// Add logging middleware
 	handler := loggingMiddleware(mux)
@@ -129,7 +141,7 @@ func main() {
 		log.Println("   GET  /api/events           - List events")
 		log.Println("   GET  /api/stats            - Database statistics")
 		log.Println("   GET  /api/camera           - Camera information")
-		
+
 		if clickhouseClient != nil {
 			log.Println("")
 			log.Println("📊 Analytics endpoints (ClickHouse):")

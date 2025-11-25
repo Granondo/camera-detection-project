@@ -1,0 +1,936 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "description": "API для системы видеонаблюдения с YOLO детекцией",
+        "title": "Camera Surveillance API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/analytics/detections/hourly": {
+            "get": {
+                "description": "Получить детекции по часам",
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Get detections by hour",
+                "parameters": [
+                    {
+                        "description": "Hours to look back",
+                        "name": "hours",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 168,
+                            "default": 24
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/api.DetectionsHourlyResponse"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/summary": {
+            "get": {
+                "description": "Получить сводку аналитики из ClickHouse",
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Get analytics summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/api.AnalyticsSummaryResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/top-objects": {
+            "get": {
+                "description": "Получить топ обнаруженных объектов",
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Get top detected objects",
+                "parameters": [
+                    {
+                        "description": "Days to look back",
+                        "name": "days",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 90,
+                            "default": 7
+                        }
+                    },
+                    {
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/api.TopObjectsResponse"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/cache/clear": {
+            "post": {
+                "description": "Очистить весь кэш Redis",
+                "tags": [
+                    "system"
+                ],
+                "summary": "Clear cache",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/camera": {
+            "get": {
+                "description": "Получить информацию о камере",
+                "tags": [
+                    "camera"
+                ],
+                "summary": "Get camera information",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/storage.Camera"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/events": {
+            "get": {
+                "description": "Получить список событий системы",
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get events list",
+                "parameters": [
+                    {
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/storage.Event"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/frames": {
+            "get": {
+                "description": "Получить список кадров",
+                "tags": [
+                    "frames"
+                ],
+                "summary": "Get frames list",
+                "parameters": [
+                    {
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "description": "Filter by detection",
+                        "name": "has_detection",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/api.FrameResponse"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Проверка работоспособности API",
+                "tags": [
+                    "system"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/recordings": {
+            "get": {
+                "description": "Получить список видеозаписей",
+                "tags": [
+                    "recordings"
+                ],
+                "summary": "Get recordings list",
+                "parameters": [
+                    {
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/api.RecordingResponse"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/recordings/{id}": {
+            "get": {
+                "description": "Получить информацию о конкретной записи",
+                "tags": [
+                    "recordings"
+                ],
+                "summary": "Get recording by ID",
+                "parameters": [
+                    {
+                        "description": "Recording ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/api.RecordingResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/stats": {
+            "get": {
+                "description": "Получить статистику базы данных",
+                "tags": [
+                    "system"
+                ],
+                "summary": "Get database statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "integer"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "Получить полный статус системы видеонаблюдения",
+                "tags": [
+                    "system"
+                ],
+                "summary": "Get system status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/api.APIResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/api.StatusResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/api.APIResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "//localhost:8080/api"
+        }
+    ],
+    "components": {
+        "schemas": {
+            "api.APIResponse": {
+                "type": "object",
+                "properties": {
+                    "cached": {
+                        "type": "boolean"
+                    },
+                    "data": {},
+                    "error": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "success": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "api.AnalyticsSummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "clickhouse_available": {
+                        "type": "boolean"
+                    },
+                    "detections_by_hour": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/api.DetectionsHourlyResponse"
+                        }
+                    },
+                    "detections_today": {
+                        "type": "integer"
+                    },
+                    "top_objects": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/api.TopObjectsResponse"
+                        }
+                    },
+                    "total_detections": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "api.DetectionsHourlyResponse": {
+                "type": "object",
+                "properties": {
+                    "avg_confidence": {
+                        "type": "number"
+                    },
+                    "hour": {
+                        "type": "string"
+                    },
+                    "max_confidence": {
+                        "type": "number"
+                    },
+                    "min_confidence": {
+                        "type": "number"
+                    },
+                    "object_class": {
+                        "type": "string"
+                    },
+                    "total_detections": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "api.FrameResponse": {
+                "type": "object",
+                "properties": {
+                    "file_exists": {
+                        "type": "boolean"
+                    },
+                    "frame": {
+                        "$ref": "#/components/schemas/storage.Frame"
+                    },
+                    "has_detection": {
+                        "type": "boolean"
+                    },
+                    "image_url": {
+                        "type": "string"
+                    },
+                    "thumbnail_url": {
+                        "type": "string"
+                    }
+                }
+            },
+            "api.RecordingResponse": {
+                "type": "object",
+                "properties": {
+                    "download_url": {
+                        "type": "string"
+                    },
+                    "file_exists": {
+                        "type": "boolean"
+                    },
+                    "recording": {
+                        "$ref": "#/components/schemas/storage.Recording"
+                    },
+                    "stream_url": {
+                        "type": "string"
+                    }
+                }
+            },
+            "api.StatusResponse": {
+                "type": "object",
+                "properties": {
+                    "camera": {
+                        "$ref": "#/components/schemas/storage.Camera"
+                    },
+                    "last_updated": {
+                        "type": "string"
+                    },
+                    "stats": {
+                        "$ref": "#/components/schemas/api.SystemStats"
+                    },
+                    "system_status": {
+                        "type": "string"
+                    },
+                    "uptime": {
+                        "type": "string"
+                    }
+                }
+            },
+            "api.SystemStats": {
+                "type": "object",
+                "properties": {
+                    "cameras": {
+                        "type": "integer"
+                    },
+                    "detections": {
+                        "type": "integer"
+                    },
+                    "events": {
+                        "type": "integer"
+                    },
+                    "frames": {
+                        "type": "integer"
+                    },
+                    "recordings": {
+                        "type": "integer"
+                    },
+                    "storage_usage_bytes": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "api.TopObjectsResponse": {
+                "type": "object",
+                "properties": {
+                    "avg_confidence": {
+                        "type": "number"
+                    },
+                    "object_class": {
+                        "type": "string"
+                    },
+                    "total_detections": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "storage.Camera": {
+                "type": "object",
+                "properties": {
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "last_ping": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "rtsp_url": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "username": {
+                        "type": "string"
+                    }
+                }
+            },
+            "storage.Event": {
+                "type": "object",
+                "properties": {
+                    "camera_id": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "event_type": {
+                        "description": "motion, person_detected, system_error, etc",
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "metadata": {
+                        "description": "JSON with additional data",
+                        "type": "string"
+                    },
+                    "notified": {
+                        "type": "boolean"
+                    },
+                    "resolved": {
+                        "type": "boolean"
+                    },
+                    "resolved_at": {
+                        "type": "string"
+                    },
+                    "severity": {
+                        "description": "low, medium, high, critical",
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    }
+                }
+            },
+            "storage.Frame": {
+                "type": "object",
+                "properties": {
+                    "camera_id": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "file_path": {
+                        "type": "string"
+                    },
+                    "file_size": {
+                        "type": "integer"
+                    },
+                    "has_detection": {
+                        "type": "boolean"
+                    },
+                    "height": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "processed": {
+                        "type": "boolean"
+                    },
+                    "recording_id": {
+                        "description": "Can be null for standalone frames",
+                        "type": "integer"
+                    },
+                    "thumbnail_path": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string"
+                    },
+                    "width": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "storage.Recording": {
+                "type": "object",
+                "properties": {
+                    "archived_at": {
+                        "type": "string"
+                    },
+                    "camera_id": {
+                        "type": "integer"
+                    },
+                    "codec": {
+                        "description": "h264, h265, etc",
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "duration": {
+                        "description": "seconds",
+                        "type": "integer"
+                    },
+                    "end_time": {
+                        "type": "string"
+                    },
+                    "file_path": {
+                        "type": "string"
+                    },
+                    "file_size": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "integer"
+                    },
+                    "quality": {
+                        "description": "1080p, 720p, etc",
+                        "type": "string"
+                    },
+                    "start_time": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "description": "recording, completed, failed",
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
