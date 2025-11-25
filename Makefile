@@ -445,7 +445,7 @@ swagger:
 
 ## Generate TypeScript types
 ts-types: 
-	cd surveillance-ui && npm run generate:types:local
+	cd surveillance-ui && pnpm run generate:types:local
 
 ## Start API with fresh types	
 api-with-types: swagger api-dev 

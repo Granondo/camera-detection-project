@@ -290,7 +290,7 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:8080
-    command: pnpm run dev -- --host
+    command: pnpm run dev --host
     networks:
       - surveillance-network
   
