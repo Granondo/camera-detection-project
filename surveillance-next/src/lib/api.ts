@@ -1,7 +1,30 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
+export interface Event {
+  id: number
+  camera_id: number
+  event_type: string
+  severity: string
+  title: string
+  message: string
+  metadata: unknown | null
+  notified: boolean
+  resolved: boolean
+  timestamp: string
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface Frame {
+  id: number
+  camera_id: number
+  timestamp: string
+  image_path: string
+  detections: Detection[]
+}
+
 export interface Detection {
-  id: string
+  id?: number
   type: string
   confidence: number
   bbox: {
@@ -12,96 +35,102 @@ export interface Detection {
   }
 }
 
-export interface Frame {
-  id: string
-  cameraId: string
-  timestamp: string
-  imagePath: string
-  detections: Detection[]
+// API response wrapper
+interface ApiResponse<T> {
+  success: boolean
+  data: T
 }
 
-export interface Event {
-  id: string
-  type: string
-  startTime: string
-  endTime: string | null
-  cameraId: string
-  frames: Frame[]
-  status: 'active' | 'completed'
-}
-
-export interface EventsResponse {
-  events: Event[]
-  total: number
-  page: number
-  perPage: number
-}
-
-export interface FramesResponse {
-  frames: Frame[]
-  total: number
-  page: number
-  perPage: number
-}
-
+// Events
 export async function getEvents(params?: {
   page?: number
   perPage?: number
   type?: string
-  cameraId?: string
-}): Promise<EventsResponse> {
+  cameraId?: number
+}): Promise<{ events: Event[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.page) searchParams.set('page', params.page.toString())
   if (params?.perPage) searchParams.set('per_page', params.perPage.toString())
   if (params?.type) searchParams.set('type', params.type)
-  if (params?.cameraId) searchParams.set('camera_id', params.cameraId)
+  if (params?.cameraId) searchParams.set('camera_id', params.cameraId.toString())
 
-  const res = await fetch(`${API_BASE}/api/events?${searchParams}`, {
+  const url = `${API_BASE}/api/events?${searchParams}`
+  
+  const res = await fetch(url, {
     next: { revalidate: 30 },
   })
 
-  if (!res.ok) throw new Error('Failed to fetch events')
-  return res.json()
+  if (!res.ok) {
+    return { events: [], total: 0 }
+  }
+
+  const json: ApiResponse<Event[]> = await res.json()
+  
+  return {
+    events: json.data || [],
+    total: json.data?.length || 0,
+  }
 }
 
-export async function getEvent(id: string): Promise<Event> {
+export async function getEvent(id: string): Promise<Event | null> {
   const res = await fetch(`${API_BASE}/api/events/${id}`, {
     next: { revalidate: 30 },
   })
 
-  if (!res.ok) throw new Error('Failed to fetch event')
-  return res.json()
+  if (!res.ok) {
+    return null
+  }
+
+  const json: ApiResponse<Event> = await res.json()
+  return json.data || null
 }
 
+// Frames
 export async function getFrames(params?: {
   page?: number
   perPage?: number
-  cameraId?: string
+  cameraId?: number
   minConfidence?: number
-}): Promise<FramesResponse> {
+}): Promise<{ frames: Frame[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.page) searchParams.set('page', params.page.toString())
   if (params?.perPage) searchParams.set('per_page', params.perPage.toString())
-  if (params?.cameraId) searchParams.set('camera_id', params.cameraId)
+  if (params?.cameraId) searchParams.set('camera_id', params.cameraId.toString())
   if (params?.minConfidence) searchParams.set('min_confidence', params.minConfidence.toString())
 
-  const res = await fetch(`${API_BASE}/api/frames?${searchParams}`, {
+  const url = `${API_BASE}/api/frames?${searchParams}`
+  
+  const res = await fetch(url, {
     next: { revalidate: 30 },
   })
 
-  if (!res.ok) throw new Error('Failed to fetch frames')
-  return res.json()
+  if (!res.ok) {
+    return { frames: [], total: 0 }
+  }
+
+  const json: ApiResponse<Frame[]> = await res.json()
+  
+  return {
+    frames: json.data || [],
+    total: json.data?.length || 0,
+  }
 }
 
-export async function getFrame(id: string): Promise<Frame> {
+export async function getFrame(id: string): Promise<Frame | null> {
   const res = await fetch(`${API_BASE}/api/frames/${id}`, {
     next: { revalidate: 30 },
   })
 
-  if (!res.ok) throw new Error('Failed to fetch frame')
-  return res.json()
+  if (!res.ok) {
+    return null
+  }
+
+  const json: ApiResponse<Frame> = await res.json()
+  return json.data || null
 }
 
+// Image URL helper
 export function getImageUrl(path: string): string {
+  if (path.startsWith('http')) return path
   return `${API_BASE}/images/${path}`
 }

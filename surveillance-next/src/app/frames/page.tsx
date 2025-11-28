@@ -19,7 +19,7 @@ export const metadata = {
 export default async function FramesPage({ searchParams }: FramesPageProps) {
   const params = await searchParams
   const page = Number(params.page) || 1
-  const cameraId = params.cameraId
+  const cameraId = params.cameraId ? Number(params.cameraId) : undefined
   const minConfidence = params.minConfidence ? Number(params.minConfidence) : undefined
 
   const { frames, total } = await getFrames({

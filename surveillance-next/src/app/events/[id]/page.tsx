@@ -1,7 +1,6 @@
 import { Box, Container, Heading, Text, Badge, SimpleGrid, Flex } from '@chakra-ui/react'
 import { format } from 'date-fns'
 import { Header } from '@/components/Header'
-import { FrameCard } from '@/components/FrameCard'
 import { getEvent } from '@/lib/api'
 import type { Metadata } from 'next'
 
@@ -15,9 +14,15 @@ export async function generateMetadata({ params }: EventDetailPageProps): Promis
   const { id } = await params
   const event = await getEvent(id)
   
+  if (!event) {
+    return {
+      title: 'Event Not Found | Surveillance',
+    }
+  }
+  
   return {
-    title: `${event.type} Event | Surveillance`,
-    description: `Detection event from camera ${event.cameraId} at ${event.startTime}`,
+    title: `${event.title} | Surveillance`,
+    description: `Detection event from camera ${event.camera_id} at ${event.timestamp}`,
   }
 }
 
@@ -25,63 +30,81 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
   const { id } = await params
   const event = await getEvent(id)
   
-  const statusColor = event.status === 'active' ? 'green' : 'gray'
-  const formattedStart = format(new Date(event.startTime), 'dd MMM yyyy, HH:mm:ss')
-  const formattedEnd = event.endTime 
-    ? format(new Date(event.endTime), 'dd MMM yyyy, HH:mm:ss')
-    : 'Ongoing'
+  if (!event) {
+    return (
+      <Box minH="100vh">
+        <Header />
+        <Container maxW="container.xl" py={8}>
+          <Text>Event not found</Text>
+        </Container>
+      </Box>
+    )
+  }
+
+  const severityColor = {
+    low: 'green',
+    medium: 'yellow',
+    high: 'orange',
+    critical: 'red',
+  }[event.severity] || 'gray'
+
+  const formattedTime = format(new Date(event.timestamp), 'dd MMM yyyy, HH:mm:ss')
+  const formattedCreatedAt = format(new Date(event.created_at), 'dd MMM yyyy, HH:mm:ss')
+  const formattedResolvedAt = event.resolved_at 
+    ? format(new Date(event.resolved_at), 'dd MMM yyyy, HH:mm:ss')
+    : 'Not resolved'
 
   return (
     <Box minH="100vh">
       <Header />
-
+      
       <Container maxW="container.xl" py={8}>
         <Box mb={8}>
-          <Flex align="center" gap={3} mb={3}>
+          <Flex align="center" gap={3} mb={3} flexWrap="wrap">
             <Heading size="xl" color="gray.800">
-              {event.type}
+              {event.title}
             </Heading>
-            <Badge colorPalette={statusColor} variant="solid" fontSize="sm">
-              {event.status}
+            <Badge colorPalette={severityColor} variant="solid" fontSize="sm">
+              {event.severity}
+            </Badge>
+            <Badge colorPalette={event.resolved ? 'green' : 'orange'} variant="outline" fontSize="sm">
+              {event.resolved ? 'Resolved' : 'Active'}
             </Badge>
           </Flex>
+          
+          <Text color="gray.600" fontSize="lg" mb={6}>
+            {event.message}
+          </Text>
 
           <SimpleGrid columns={{ base: 1, sm: 2, md: 4 }} gap={4} mb={6}>
             <Box bg="white" p={4} borderRadius="md" shadow="sm">
               <Text fontSize="sm" color="gray.500" mb={1}>Camera</Text>
-              <Text fontWeight="medium">{event.cameraId}</Text>
+              <Text fontWeight="medium">{event.camera_id}</Text>
             </Box>
             <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Started</Text>
-              <Text fontWeight="medium">{formattedStart}</Text>
+              <Text fontSize="sm" color="gray.500" mb={1}>Event Type</Text>
+              <Text fontWeight="medium">{event.event_type}</Text>
             </Box>
             <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Ended</Text>
-              <Text fontWeight="medium">{formattedEnd}</Text>
+              <Text fontSize="sm" color="gray.500" mb={1}>Timestamp</Text>
+              <Text fontWeight="medium">{formattedTime}</Text>
             </Box>
             <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Frames</Text>
-              <Text fontWeight="medium">{event.frames.length}</Text>
+              <Text fontSize="sm" color="gray.500" mb={1}>Created At</Text>
+              <Text fontWeight="medium">{formattedCreatedAt}</Text>
             </Box>
           </SimpleGrid>
-        </Box>
 
-        <Box>
-          <Heading size="lg" mb={4} color="gray.800">
-            Event Frames
-          </Heading>
-
-          {event.frames.length > 0 ? (
-            <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 4 }} gap={6}>
-              {event.frames.map((frame) => (
-                <FrameCard key={frame.id} frame={frame} />
-              ))}
-            </SimpleGrid>
-          ) : (
-            <Box textAlign="center" py={12} bg="white" borderRadius="lg">
-              <Text color="gray.500">No frames in this event</Text>
+          <SimpleGrid columns={{ base: 1, sm: 2 }} gap={4}>
+            <Box bg="white" p={4} borderRadius="md" shadow="sm">
+              <Text fontSize="sm" color="gray.500" mb={1}>Resolved At</Text>
+              <Text fontWeight="medium">{formattedResolvedAt}</Text>
             </Box>
-          )}
+            <Box bg="white" p={4} borderRadius="md" shadow="sm">
+              <Text fontSize="sm" color="gray.500" mb={1}>Notified</Text>
+              <Text fontWeight="medium">{event.notified ? 'Yes' : 'No'}</Text>
+            </Box>
+          </SimpleGrid>
         </Box>
       </Container>
     </Box>

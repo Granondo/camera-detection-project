@@ -13,30 +13,48 @@ interface FrameDetailPageProps {
 export async function generateMetadata({ params }: FrameDetailPageProps): Promise<Metadata> {
   const { id } = await params
   const frame = await getFrame(id)
-
+  
+  if (!frame) {
+    return {
+      title: 'Frame Not Found | Surveillance',
+    }
+  }
+  
   return {
-    title: `Frame from ${frame.cameraId} | Surveillance`,
-    description: `Frame captured at ${frame.timestamp} with ${frame.detections.length} detections`,
+    title: `Frame from Camera ${frame.camera_id} | Surveillance`,
+    description: `Frame captured at ${frame.timestamp} with ${frame.detections?.length || 0} detections`,
   }
 }
 
 export default async function FrameDetailPage({ params }: FrameDetailPageProps) {
   const { id } = await params
   const frame = await getFrame(id)
+  
+  if (!frame) {
+    return (
+      <Box minH="100vh">
+        <Header />
+        <Container maxW="container.xl" py={8}>
+          <Text>Frame not found</Text>
+        </Container>
+      </Box>
+    )
+  }
 
   const formattedTime = format(new Date(frame.timestamp), 'dd MMM yyyy, HH:mm:ss')
+  const detections = frame.detections || []
 
   return (
     <Box minH="100vh">
       <Header />
-
+      
       <Container maxW="container.xl" py={8}>
         <Box mb={6}>
           <Heading size="xl" mb={2} color="gray.800">
             Frame Details
           </Heading>
           <Flex gap={4} color="gray.600">
-            <Text>📷 {frame.cameraId}</Text>
+            <Text>📷 Camera {frame.camera_id}</Text>
             <Text>🕐 {formattedTime}</Text>
           </Flex>
         </Box>
@@ -44,22 +62,22 @@ export default async function FrameDetailPage({ params }: FrameDetailPageProps) 
         <SimpleGrid columns={{ base: 1, lg: 2 }} gap={8}>
           <Box>
             <Image
-              src={getImageUrl(frame.imagePath)}
+              src={getImageUrl(frame.image_path)}
               alt={`Frame ${frame.id}`}
               w="100%"
               borderRadius="lg"
               shadow="md"
             />
           </Box>
-
+          
           <Box>
             <Heading size="md" mb={4} color="gray.800">
-              Detections ({frame.detections.length})
+              Detections ({detections.length})
             </Heading>
-
-            {frame.detections.length > 0 ? (
+            
+            {detections.length > 0 ? (
               <Flex direction="column" gap={3}>
-                {frame.detections.map((detection, index) => (
+                {detections.map((detection, index) => (
                   <Box
                     key={detection.id || index}
                     bg="white"
@@ -75,7 +93,7 @@ export default async function FrameDetailPage({ params }: FrameDetailPageProps) 
                         {(detection.confidence * 100).toFixed(1)}% confidence
                       </Badge>
                     </Flex>
-
+                    
                     <SimpleGrid columns={2} gap={2} fontSize="sm" color="gray.600">
                       <Text>X: {detection.bbox.x.toFixed(0)}</Text>
                       <Text>Y: {detection.bbox.y.toFixed(0)}</Text>

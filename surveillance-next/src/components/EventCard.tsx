@@ -1,4 +1,6 @@
-import { Box, Badge, Flex, Heading, Text, Link } from '@chakra-ui/react'
+'use client'
+
+import { Box, Card, Badge, Text, HStack, Link } from '@chakra-ui/react'
 import NextLink from 'next/link'
 import { format } from 'date-fns'
 import type { Event } from '@/lib/api'
@@ -8,40 +10,45 @@ interface EventCardProps {
 }
 
 export function EventCard({ event }: EventCardProps) {
-  const statusColor = event.status === 'active' ? 'green' : 'gray'
-  const formattedDate = format(new Date(event.startTime), 'dd MMM yyyy, HH:mm')
+  const formattedTime = format(new Date(event.timestamp), 'd MMM yyyy, HH:mm')
+  
+  const severityColor = {
+    low: 'green',
+    medium: 'yellow', 
+    high: 'orange',
+    critical: 'red',
+  }[event.severity] || 'gray'
 
   return (
-    <Link as={NextLink} href={`/events/${event.id}`} _hover={{ textDecoration: 'none' }}>
-      <Box
-        bg="white"
-        borderRadius="lg"
-        shadow="sm"
-        p={5}
+    <NextLink href={`/events/${event.id}`} style={{ textDecoration: 'none' }}>
+      <Card.Root
+        p={4}
+        cursor="pointer"
         transition="all 0.2s"
-        _hover={{ shadow: 'md', transform: 'translateY(-2px)' }}
+        _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
       >
-        <Flex justify="space-between" align="start" mb={3}>
-          <Heading size="sm" color="gray.800">
-            {event.type}
-          </Heading>
-          <Badge colorPalette={statusColor} variant="subtle">
-            {event.status}
-          </Badge>
-        </Flex>
-
-        <Flex direction="column" gap={1}>
-          <Text fontSize="sm" color="gray.600">
-            📷 Camera: {event.cameraId}
+        <Card.Body p={0}>
+          <HStack justify="space-between" mb={2}>
+            <Text fontWeight="bold" fontSize="lg">
+              {event.title}
+            </Text>
+            <Badge colorPalette={severityColor}>{event.severity}</Badge>
+          </HStack>
+          
+          <Text color="gray.600" fontSize="sm" mb={2}>
+            {event.event_type}
           </Text>
-          <Text fontSize="sm" color="gray.600">
-            🕐 {formattedDate}
+          
+          <Text color="gray.500" fontSize="sm" lineClamp={2} mb={3}>
+            {event.message}
           </Text>
-          <Text fontSize="sm" color="gray.600">
-            🖼️ Frames: {event.frames.length}
-          </Text>
-        </Flex>
-      </Box>
-    </Link>
+          
+          <HStack justify="space-between" fontSize="xs" color="gray.400">
+            <Text>Camera {event.camera_id}</Text>
+            <Text>{formattedTime}</Text>
+          </HStack>
+        </Card.Body>
+      </Card.Root>
+    </NextLink>
   )
 }
