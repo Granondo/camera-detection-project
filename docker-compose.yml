@@ -304,6 +304,7 @@ services:
       - "3000:3000"
     environment:
       - API_URL=http://api-server:8080
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
     depends_on:
       - api-server
     networks:

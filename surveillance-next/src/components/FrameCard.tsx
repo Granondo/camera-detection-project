@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Card, Badge, Text, HStack, Image } from '@chakra-ui/react'
+import { Box, Card, Badge, Text, Image } from '@chakra-ui/react'
 import NextLink from 'next/link'
 import { format } from 'date-fns'
 import type { Frame } from '@/lib/api'
@@ -11,7 +11,17 @@ interface FrameCardProps {
 }
 
 export function FrameCard({ frame }: FrameCardProps) {
-  const formattedTime = format(new Date(frame.timestamp), 'd MMM yyyy, HH:mm:ss')
+  // Защита от невалидной даты
+  let formattedTime = 'Unknown time'
+  try {
+    const date = new Date(frame.timestamp)
+    if (!isNaN(date.getTime())) {
+      formattedTime = format(date, 'd MMM yyyy, HH:mm:ss')
+    }
+  } catch {
+    formattedTime = 'Invalid date'
+  }
+
   const detectionsCount = frame.detections?.length || 0
 
   return (
