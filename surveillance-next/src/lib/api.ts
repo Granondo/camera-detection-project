@@ -1,4 +1,11 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return ''
+  }
+  return process.env.API_URL || 'http://api-server:8080'
+}
+
+const API_BASE = getBaseUrl()
 
 export interface Event {
   id: number
@@ -35,13 +42,11 @@ export interface Detection {
   }
 }
 
-// API response wrapper
 interface ApiResponse<T> {
   success: boolean
   data: T
 }
 
-// Events
 export async function getEvents(params?: {
   page?: number
   perPage?: number
@@ -55,7 +60,6 @@ export async function getEvents(params?: {
   if (params?.cameraId) searchParams.set('camera_id', params.cameraId.toString())
 
   const url = `${API_BASE}/api/events?${searchParams}`
-  
   const res = await fetch(url, {
     next: { revalidate: 30 },
   })
@@ -65,7 +69,6 @@ export async function getEvents(params?: {
   }
 
   const json: ApiResponse<Event[]> = await res.json()
-  
   return {
     events: json.data || [],
     total: json.data?.length || 0,
@@ -85,7 +88,6 @@ export async function getEvent(id: string): Promise<Event | null> {
   return json.data || null
 }
 
-// Frames
 export async function getFrames(params?: {
   page?: number
   perPage?: number
@@ -99,7 +101,6 @@ export async function getFrames(params?: {
   if (params?.minConfidence) searchParams.set('min_confidence', params.minConfidence.toString())
 
   const url = `${API_BASE}/api/frames?${searchParams}`
-  
   const res = await fetch(url, {
     next: { revalidate: 30 },
   })
@@ -109,7 +110,6 @@ export async function getFrames(params?: {
   }
 
   const json: ApiResponse<Frame[]> = await res.json()
-  
   return {
     frames: json.data || [],
     total: json.data?.length || 0,
@@ -129,7 +129,6 @@ export async function getFrame(id: string): Promise<Frame | null> {
   return json.data || null
 }
 
-// Image URL helper
 export function getImageUrl(path: string): string {
   if (path.startsWith('http')) return path
   return `${API_BASE}/images/${path}`

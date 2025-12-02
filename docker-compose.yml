@@ -293,6 +293,22 @@ services:
     command: pnpm run dev --host
     networks:
       - surveillance-network
+
+  # Next.js UI
+  surveillance-next:
+    build:
+      context: ./surveillance-next
+      dockerfile: Dockerfile
+    container_name: surveillance-next
+    ports:
+      - "3000:3000"
+    environment:
+      - API_URL=http://api-server:8080
+    depends_on:
+      - api-server
+    networks:
+      - surveillance-network
+    restart: unless-stopped
   
   # pgAdmin for database management (optional)
   pgadmin:
