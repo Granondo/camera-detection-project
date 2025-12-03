@@ -356,6 +356,11 @@ func (s *Service) GetRecording(recordingID int) (*Recording, error) {
 	return s.recordingRepo.GetRecording(recordingID)
 }
 
+// DeleteRecording deletes a recording from database
+func (s *Service) DeleteRecording(recordingID int) error {
+	return s.recordingRepo.DeleteRecording(recordingID)
+}
+
 // GetFrame retrieves a single frame by ID
 func (s *Service) GetFrame(frameID int) (*Frame, error) {
 	return s.frameRepo.GetFrame(frameID)

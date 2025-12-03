@@ -163,9 +163,9 @@ func (r *RecordingRepository) GetRecordingsByCamera(cameraID int, limit int) ([]
 	query := `
 		SELECT id, camera_id, file_path, file_size, duration, start_time, end_time,
 			   quality, codec, status, created_at, archived_at
-		FROM recordings 
-		WHERE camera_id = $1 
-		ORDER BY start_time DESC 
+		FROM recordings
+		WHERE camera_id = $1
+		ORDER BY start_time DESC
 		LIMIT $2`
 
 	rows, err := r.db.conn.Query(query, cameraID, limit)
@@ -188,6 +188,13 @@ func (r *RecordingRepository) GetRecordingsByCamera(cameraID int, limit int) ([]
 	}
 
 	return recordings, rows.Err()
+}
+
+// DeleteRecording deletes a recording from the database
+func (r *RecordingRepository) DeleteRecording(id int) error {
+	query := `DELETE FROM recordings WHERE id = $1`
+	_, err := r.db.conn.Exec(query, id)
+	return err
 }
 
 // Frame Repository Methods

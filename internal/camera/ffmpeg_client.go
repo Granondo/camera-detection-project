@@ -61,6 +61,7 @@ type FFmpegClient struct {
 	analyticsClient    *analytics.ClickHouseClient
 	queueClient        *queue.RabbitMQClient
 	cameraID           int // ← ДОБАВЛЕНО для ClickHouse
+	recordingDetections map[int]bool // ← Tracks if recording has any detections
 }
 
 // StorageService interface to work with storage package
@@ -72,6 +73,8 @@ type StorageService interface {
 	CreateEvent(eventType, severity, title, message string, metadata *string) error
 	UpdateCameraStatus(status string) error
 	GetCameraStatus() (*storage.Camera, error) // ← ДОБАВЛЕНО
+	GetRecording(recordingID int) (*storage.Recording, error) // ← ДОБАВЛЕНО для cleanup
+	DeleteRecording(recordingID int) error // ← ДОБАВЛЕНО для cleanup
 }
 
 // NewFFmpegClient creates a new FFmpeg client without storage
@@ -79,10 +82,11 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &FFmpegClient{
-		config:   cfg,
-		ctx:      ctx,
-		cancel:   cancel,
-		cameraID: 1, // default
+		config:              cfg,
+		ctx:                 ctx,
+		cancel:              cancel,
+		cameraID:            1, // default
+		recordingDetections: make(map[int]bool),
 	}
 
 	return client, nil
@@ -97,12 +101,13 @@ func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FF
 	}
 
 	client := &FFmpegClient{
-		config:          cfg,
-		ctx:             ctx,
-		cancel:          cancel,
-		storageService:  storage,
-		detectionClient: detectionClient,
-		cameraID:        1, // default
+		config:              cfg,
+		ctx:                 ctx,
+		cancel:              cancel,
+		storageService:      storage,
+		detectionClient:     detectionClient,
+		cameraID:            1, // default
+		recordingDetections: make(map[int]bool),
 	}
 
 	return client, nil
@@ -122,14 +127,15 @@ func NewFFmpegClientWithStorageAndAnalytics(
 	}
 
 	client := &FFmpegClient{
-		config:          cfg,
-		ctx:             ctx,
-		cancel:          cancel,
-		storageService:  storage,
-		detectionClient: detectionClient,
-		analyticsClient: analytics,
-		queueClient:     queueClient,
-		cameraID:        1, // default
+		config:              cfg,
+		ctx:                 ctx,
+		cancel:              cancel,
+		storageService:      storage,
+		detectionClient:     detectionClient,
+		analyticsClient:     analytics,
+		queueClient:         queueClient,
+		cameraID:            1, // default
+		recordingDetections: make(map[int]bool),
 	}
 
 	// Получить реальный ID камеры из БД
@@ -332,52 +338,69 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 	// Небольшая задержка чтобы файл полностью записался
 	time.Sleep(100 * time.Millisecond)
 
-	// Сохранить в базу данных
-	if c.storageService != nil {
-		frame, err := c.storageService.SaveFrame(framePath, c.currentRecordingID)
-		if err != nil {
-			log.Printf("⚠️ Warning: Could not save frame to database: %v", err)
-			return
+	c.mu.Lock()
+	c.frameCount++
+	frameNum := c.frameCount
+	c.mu.Unlock()
+
+	// ✅ NEW APPROACH: Run detection FIRST, before saving
+	if !c.config.DetectionEnabled {
+		log.Printf("⏭️  Detection disabled, skipping frame #%d", frameNum)
+		// Delete frame since we're not processing it
+		if err := os.Remove(framePath); err != nil {
+			log.Printf("⚠️  Could not delete frame: %v", err)
 		}
+		return
+	}
 
-		log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
+	log.Printf("🔍 Running detection on frame #%d BEFORE saving...", frameNum)
+	hasDetection, detections, processingTime := c.detectObjects(framePath, frameNum)
 
-		c.mu.Lock()
-		c.frameCount++
-		frameNum := c.frameCount
-		c.mu.Unlock()
-
-		// ✅ РЕЖИМ 1: RabbitMQ включен - асинхронная обработка
-		if c.config.RabbitMQEnabled && c.queueClient != nil {
-			// Публикуем задачу на детекцию в RabbitMQ
-			frameMsg := queue.FrameMessage{
-				FrameID:     frame.ID,
-				RecordingID: c.currentRecordingID,
-				CameraID:    int(c.cameraID),
-				FilePath:    framePath,
-				Timestamp:   frame.Timestamp,
-				FrameNumber: frameNum,
-			}
-
-			err := c.queueClient.Publish(
-				queue.ExchangeFrames,
-				queue.RoutingKeyDetect,
-				frameMsg,
-			)
-
-			if err != nil {
-				log.Printf("❌ Failed to publish frame to RabbitMQ: %v", err)
-				// Fallback на синхронную обработку
-				log.Printf("⚠️  Falling back to synchronous detection...")
-				c.processFrameSync(frame, framePath, frameNum)
-			} else {
-				log.Printf("✅ Frame #%d published to RabbitMQ (ID: %d)", frameNum, frame.ID)
-			}
-		} else {
-			// ✅ РЕЖИМ 2: RabbitMQ отключен - синхронная обработка (старый способ)
-			log.Printf("🔄 Processing frame #%d synchronously (RabbitMQ disabled)", frameNum)
-			c.processFrameSync(frame, framePath, frameNum)
+	// ✅ Only save frame if detection found
+	if !hasDetection {
+		log.Printf("❌ No detection in frame #%d - deleting frame", frameNum)
+		if err := os.Remove(framePath); err != nil {
+			log.Printf("⚠️  Could not delete frame: %v", err)
 		}
+		return
+	}
+
+	// ✅ Detection found! Save to database
+	log.Printf("✅ Detection found in frame #%d - saving to database", frameNum)
+
+	if c.storageService == nil {
+		log.Printf("⚠️  No storage service, cannot save frame")
+		return
+	}
+
+	frame, err := c.storageService.SaveFrame(framePath, c.currentRecordingID)
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not save frame to database: %v", err)
+		return
+	}
+
+	log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)
+
+	// Mark frame as processed with detection
+	if err := c.storageService.UpdateFrameProcessed(frame.ID, true, nil); err != nil {
+		log.Printf("⚠️  Warning: Could not update frame processed status: %v", err)
+	}
+
+	// Track that this recording has a detection
+	c.mu.Lock()
+	if c.currentRecordingID != nil {
+		c.recordingDetections[*c.currentRecordingID] = true
+	}
+	c.mu.Unlock()
+
+	// Log detections to ClickHouse
+	if len(detections) > 0 && c.analyticsClient != nil {
+		c.logDetectionsToClickHouse(detections, frame.ID, frameNum, processingTime)
+	}
+
+	// Create detection event
+	if len(detections) > 0 {
+		c.createDetectionEvent(detections, framePath, frameNum)
 	}
 }
 
@@ -405,6 +428,25 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 	// Подождать чтобы файл полностью записался
 	time.Sleep(1 * time.Second)
 
+	// Check if previous recording had any detections
+	c.mu.Lock()
+	previousRecordingID := c.currentRecordingID
+	c.mu.Unlock()
+
+	if previousRecordingID != nil {
+		c.mu.Lock()
+		hadDetections := c.recordingDetections[*previousRecordingID]
+		c.mu.Unlock()
+
+		if !hadDetections {
+			// No detections in previous recording - find and delete it
+			log.Printf("🗑️  Previous recording (ID: %d) had no detections - will be deleted", *previousRecordingID)
+			c.cleanupRecordingWithoutDetections(*previousRecordingID)
+		} else {
+			log.Printf("✅ Previous recording (ID: %d) has detections - keeping", *previousRecordingID)
+		}
+	}
+
 	// Получить информацию о файле
 	fileInfo, err := os.Stat(videoPath)
 	if err != nil {
@@ -412,7 +454,7 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 		return
 	}
 
-	// Создать запись в БД
+	// Создать запись в БД для нового сегмента
 	if c.storageService != nil {
 		recording, err := c.storageService.StartRecording(videoPath)
 		if err != nil {
@@ -424,6 +466,8 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 		c.mu.Lock()
 		c.currentRecording = recording
 		c.currentRecordingID = &recording.ID
+		// Initialize detection tracking for new recording
+		c.recordingDetections[recording.ID] = false
 		c.mu.Unlock()
 
 		// Сразу финализировать запись (т.к. сегмент уже завершен)
@@ -434,6 +478,39 @@ func (c *FFmpegClient) handleNewRecording(videoPath string) {
 				recording.ID, formatBytes(fileInfo.Size()))
 		}
 	}
+}
+
+// cleanupRecordingWithoutDetections deletes recording file and DB record
+func (c *FFmpegClient) cleanupRecordingWithoutDetections(recordingID int) {
+	if c.storageService == nil {
+		return
+	}
+
+	// Get recording info from database
+	recording, err := c.storageService.GetRecording(recordingID)
+	if err != nil {
+		log.Printf("⚠️  Could not get recording %d for cleanup: %v", recordingID, err)
+		return
+	}
+
+	// Delete the video file from disk
+	if err := os.Remove(recording.FilePath); err != nil {
+		log.Printf("⚠️  Could not delete recording file %s: %v", recording.FilePath, err)
+	} else {
+		log.Printf("🗑️  Deleted recording file: %s", filepath.Base(recording.FilePath))
+	}
+
+	// Delete from database
+	if err := c.storageService.DeleteRecording(recordingID); err != nil {
+		log.Printf("⚠️  Could not delete recording from database: %v", err)
+	} else {
+		log.Printf("✅ Deleted recording from database (ID: %d)", recordingID)
+	}
+
+	// Clean up from tracking map
+	c.mu.Lock()
+	delete(c.recordingDetections, recordingID)
+	c.mu.Unlock()
 }
 
 // ✅ НОВЫЙ МЕТОД: Логирование детекций в ClickHouse
