@@ -156,10 +156,28 @@ export async function getFrame(id: string): Promise<Frame | null> {
 }
 
 export function getImageUrl(path: string): string {
+  // If already a full URL, return as-is
   if (path.startsWith("http")) return path;
+
+  // If path is already an absolute API path (starts with /api/),
+  // return it as-is for browser to use (relative URL)
+  // This works for both SSR and client-side rendering
+  if (path.startsWith("/api/")) {
+    return path;
+  }
+
+  // For client-side, use the public API URL
+  // For server-side, return relative path
   const baseUrl =
     typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
-      : process.env.API_URL || "http://api-server:8080";
-  return `${baseUrl}/images/${path}`;
+      ? process.env.NEXT_PUBLIC_API_URL || ""
+      : "";
+
+  // If we have a baseUrl and path doesn't start with /, prepend baseUrl
+  if (baseUrl && !path.startsWith("/")) {
+    return `${baseUrl}/images/${path}`;
+  }
+
+  // Otherwise, return relative path
+  return path.startsWith("/") ? path : `/images/${path}`;
 }
