@@ -10,6 +10,7 @@ const API_BASE = getBaseUrl();
 export interface Event {
   id: number;
   camera_id: number;
+  frame_id: number | null;
   event_type: string;
   severity: string;
   title: string;

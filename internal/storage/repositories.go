@@ -309,11 +309,11 @@ func (r *FrameRepository) GetUnprocessedFrames(limit int) ([]Frame, error) {
 // CreateEvent creates a new event record
 func (r *EventRepository) CreateEvent(event *Event) error {
 	query := `
-		INSERT INTO events (camera_id, event_type, severity, title, message, metadata, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO events (camera_id, frame_id, event_type, severity, title, message, metadata, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at`
 
-	return r.db.conn.QueryRow(query, event.CameraID, event.EventType, event.Severity,
+	return r.db.conn.QueryRow(query, event.CameraID, event.FrameID, event.EventType, event.Severity,
 		event.Title, event.Message, event.Metadata, event.Timestamp).
 		Scan(&event.ID, &event.CreatedAt)
 }
@@ -321,10 +321,10 @@ func (r *EventRepository) CreateEvent(event *Event) error {
 // GetRecentEvents retrieves recent events
 func (r *EventRepository) GetRecentEvents(limit int) ([]Event, error) {
 	query := `
-		SELECT id, camera_id, event_type, severity, title, message, metadata,
+		SELECT id, camera_id, frame_id, event_type, severity, title, message, metadata,
 			   notified, resolved, timestamp, created_at, resolved_at
-		FROM events 
-		ORDER BY timestamp DESC 
+		FROM events
+		ORDER BY timestamp DESC
 		LIMIT $1`
 
 	rows, err := r.db.conn.Query(query, limit)
@@ -336,7 +336,7 @@ func (r *EventRepository) GetRecentEvents(limit int) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var event Event
-		err := rows.Scan(&event.ID, &event.CameraID, &event.EventType, &event.Severity,
+		err := rows.Scan(&event.ID, &event.CameraID, &event.FrameID, &event.EventType, &event.Severity,
 			&event.Title, &event.Message, &event.Metadata, &event.Notified, &event.Resolved,
 			&event.Timestamp, &event.CreatedAt, &event.ResolvedAt)
 		if err != nil {
@@ -351,9 +351,9 @@ func (r *EventRepository) GetRecentEvents(limit int) ([]Event, error) {
 // GetUnnotifiedEvents retrieves events that haven't been notified yet
 func (r *EventRepository) GetUnnotifiedEvents() ([]Event, error) {
 	query := `
-		SELECT id, camera_id, event_type, severity, title, message, metadata,
+		SELECT id, camera_id, frame_id, event_type, severity, title, message, metadata,
 			   notified, resolved, timestamp, created_at, resolved_at
-		FROM events 
+		FROM events
 		WHERE notified = FALSE AND (severity = 'high' OR severity = 'critical')
 		ORDER BY timestamp ASC`
 
@@ -366,7 +366,7 @@ func (r *EventRepository) GetUnnotifiedEvents() ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var event Event
-		err := rows.Scan(&event.ID, &event.CameraID, &event.EventType, &event.Severity,
+		err := rows.Scan(&event.ID, &event.CameraID, &event.FrameID, &event.EventType, &event.Severity,
 			&event.Title, &event.Message, &event.Metadata, &event.Notified, &event.Resolved,
 			&event.Timestamp, &event.CreatedAt, &event.ResolvedAt)
 		if err != nil {

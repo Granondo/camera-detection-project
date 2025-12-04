@@ -218,8 +218,14 @@ func (s *Service) GetUnprocessedFrames(limit int) ([]Frame, error) {
 
 // CreateEvent creates a new event
 func (s *Service) CreateEvent(eventType, severity, title, message string, metadata *string) error {
+	return s.CreateEventWithFrame(eventType, severity, title, message, metadata, nil)
+}
+
+// CreateEventWithFrame creates a new event linked to a specific frame
+func (s *Service) CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) error {
 	event := &Event{
 		CameraID:  &s.defaultCameraID,
+		FrameID:   frameID,
 		EventType: eventType,
 		Severity:  severity,
 		Title:     title,
@@ -232,7 +238,11 @@ func (s *Service) CreateEvent(eventType, severity, title, message string, metada
 		return fmt.Errorf("failed to create event: %w", err)
 	}
 
-	log.Printf("Created event: %s (%s) - %s", eventType, severity, title)
+	if frameID != nil {
+		log.Printf("Created event: %s (%s) - %s (Frame ID: %d)", eventType, severity, title, *frameID)
+	} else {
+		log.Printf("Created event: %s (%s) - %s", eventType, severity, title)
+	}
 	return nil
 }
 

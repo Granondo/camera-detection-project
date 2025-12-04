@@ -71,6 +71,7 @@ type StorageService interface {
 	SaveFrame(filePath string, recordingID *int) (*storage.Frame, error)
 	UpdateFrameProcessed(frameID int, hasDetection bool, thumbnailPath *string) error
 	CreateEvent(eventType, severity, title, message string, metadata *string) error
+	CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) error
 	UpdateCameraStatus(status string) error
 	GetCameraStatus() (*storage.Camera, error) // ← ДОБАВЛЕНО
 	GetRecording(recordingID int) (*storage.Recording, error) // ← ДОБАВЛЕНО для cleanup
@@ -393,14 +394,14 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 	}
 	c.mu.Unlock()
 
+	// Create detection event with frame ID
+	if len(detections) > 0 && c.storageService != nil {
+		c.createDetectionEventWithFrame(detections, framePath, frameNum, frame.ID)
+	}
+
 	// Log detections to ClickHouse
 	if len(detections) > 0 && c.analyticsClient != nil {
 		c.logDetectionsToClickHouse(detections, frame.ID, frameNum, processingTime)
-	}
-
-	// Create detection event
-	if len(detections) > 0 {
-		c.createDetectionEvent(detections, framePath, frameNum)
 	}
 }
 
@@ -651,10 +652,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 		}
 
 		if len(validDetections) > 0 {
-			// Создать событие о детекции
-			if c.storageService != nil {
-				c.createDetectionEvent(validDetections, framePath, frameNum)
-			}
+			// Event creation will happen after frame is saved in handleNewFrame
 			return true, validDetections, result.ProcessingTimeMS // ← ВОЗВРАЩАЕМ ДЕТЕКЦИИ
 		} else {
 			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d",
@@ -667,7 +665,7 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 	}
 }
 
-func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath string, frameNum int) {
+func (c *FFmpegClient) createDetectionEventWithFrame(detections []Detection, framePath string, frameNum int, frameID int) {
 	var mainDetection Detection
 	var maxConfidence float64 = 0
 
@@ -707,13 +705,14 @@ func (c *FFmpegClient) createDetectionEvent(detections []Detection, framePath st
 		message += fmt.Sprintf(" (total: %d objects)", len(detections))
 	}
 
-	// Создать событие в PostgreSQL
-	err := c.storageService.CreateEvent(
+	// Создать событие в PostgreSQL с привязкой к frame
+	err := c.storageService.CreateEventWithFrame(
 		eventType,
 		severity,
 		title,
 		message,
 		nil,
+		&frameID,
 	)
 
 	if err != nil {

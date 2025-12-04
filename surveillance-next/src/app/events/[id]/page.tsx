@@ -1,5 +1,6 @@
-import { Box, Container, Heading, Text, Badge, SimpleGrid, Flex } from '@chakra-ui/react'
+import { Box, Container, Heading, Text, Badge, SimpleGrid, Flex, Button } from '@chakra-ui/react'
 import { format } from 'date-fns'
+import Link from 'next/link'
 import { Header } from '@/components/Header'
 import { getEvent } from '@/lib/api'
 import type { Metadata } from 'next'
@@ -94,6 +95,19 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
               <Text fontWeight="medium">{formattedCreatedAt}</Text>
             </Box>
           </SimpleGrid>
+
+          {event.frame_id && (
+            <Box bg="blue.50" p={4} borderRadius="md" mb={6}>
+              <Text fontSize="sm" color="gray.600" mb={2}>
+                🖼️ This event was triggered by a frame
+              </Text>
+              <Link href={`/frames/${event.frame_id}`}>
+                <Button colorPalette="blue" size="sm">
+                  View Frame #{event.frame_id}
+                </Button>
+              </Link>
+            </Box>
+          )}
 
           <SimpleGrid columns={{ base: 1, sm: 2 }} gap={4}>
             <Box bg="white" p={4} borderRadius="md" shadow="sm">

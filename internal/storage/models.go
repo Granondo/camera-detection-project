@@ -62,17 +62,18 @@ type Detection struct {
 
 // Event represents system events and alerts
 type Event struct {
-	ID         int       `db:"id" json:"id"`
-	CameraID   *int      `db:"camera_id" json:"camera_id"`
-	EventType  string    `db:"event_type" json:"event_type"` // motion, person_detected, system_error, etc
-	Severity   string    `db:"severity" json:"severity"`     // low, medium, high, critical
-	Title      string    `db:"title" json:"title"`
-	Message    string    `db:"message" json:"message"`
-	Metadata   *string   `db:"metadata" json:"metadata"`     // JSON with additional data
-	Notified   bool      `db:"notified" json:"notified"`
-	Resolved   bool      `db:"resolved" json:"resolved"`
-	Timestamp  time.Time `db:"timestamp" json:"timestamp"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+	ID         int        `db:"id" json:"id"`
+	CameraID   *int       `db:"camera_id" json:"camera_id"`
+	FrameID    *int       `db:"frame_id" json:"frame_id"`     // Reference to frame that triggered event
+	EventType  string     `db:"event_type" json:"event_type"` // motion, person_detected, system_error, etc
+	Severity   string     `db:"severity" json:"severity"`     // low, medium, high, critical
+	Title      string     `db:"title" json:"title"`
+	Message    string     `db:"message" json:"message"`
+	Metadata   *string    `db:"metadata" json:"metadata"`     // JSON with additional data
+	Notified   bool       `db:"notified" json:"notified"`
+	Resolved   bool       `db:"resolved" json:"resolved"`
+	Timestamp  time.Time  `db:"timestamp" json:"timestamp"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
 	ResolvedAt *time.Time `db:"resolved_at" json:"resolved_at"`
 }
 
