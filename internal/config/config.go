@@ -59,6 +59,11 @@ type Config struct {
 	RabbitMQVHost    string
 	RabbitMQEnabled  bool
 
+	// Elasticsearch settings
+	ElasticsearchEnabled bool
+	ElasticsearchURL     string
+	ElasticsearchIndex   string
+
 	// Detection settings
 	DetectionService DetectionServiceConfig
 }
@@ -109,6 +114,11 @@ func Load() (*Config, error) {
 		RabbitMQPassword: getEnv("RABBITMQ_PASSWORD", "rabbitmq_password"),
 		RabbitMQVHost:    getEnv("RABBITMQ_VHOST", "/"),
 		RabbitMQEnabled:  getBoolEnv("RABBITMQ_ENABLED", true),
+
+		// Elasticsearch configuration
+		ElasticsearchEnabled: getBoolEnv("ELASTICSEARCH_ENABLED", true),
+		ElasticsearchURL:     getEnv("ELASTICSEARCH_URL", "http://localhost:9200"),
+		ElasticsearchIndex:   getEnv("ELASTICSEARCH_INDEX", "surveillance-events"),
 
 		DetectionService: DetectionServiceConfig{
 			URL:                 getEnv("DETECTION_SERVICE_URL", "http://detection-service:5000"),

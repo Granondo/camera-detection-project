@@ -10,6 +10,7 @@ import (
 	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/camera"
 	"camera-detection-project/internal/config"
+	"camera-detection-project/internal/search"
 	"camera-detection-project/internal/storage"
 	"camera-detection-project/internal/queue"
 )
@@ -77,13 +78,31 @@ func main() {
 		}
 	}
 
+	// ✨ Initialize Elasticsearch
+	var searchClient *search.ElasticsearchClient
+	if cfg.ElasticsearchEnabled {
+		searchClient, err = search.NewElasticsearchClient(&search.Config{
+			Addresses: []string{cfg.ElasticsearchURL},
+			Index:     cfg.ElasticsearchIndex,
+		})
+
+		if err != nil {
+			log.Printf("⚠️  Warning: Failed to connect to Elasticsearch: %v", err)
+			log.Println("⚠️  Continuing without Elasticsearch (no search indexing)...")
+			searchClient = nil
+		} else {
+			log.Println("✅ Connected to Elasticsearch")
+		}
+	}
+
 	// Create system startup event
-	if err := storageService.CreateSystemEvent(
+	_, err = storageService.CreateSystemEvent(
 		storage.EventTypeSystemStart,
 		storage.SeverityLow,
 		"System Started",
 		"Camera detection system has been started",
-	); err != nil {
+	)
+	if err != nil {
 		log.Printf("⚠️  Warning: Could not create startup event: %v", err)
 	}
 
@@ -104,8 +123,8 @@ func main() {
 		}
 	}
 
-	// Create camera client with storage and analytics
-	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient, queueClient)
+	// Create camera client with storage, analytics, and search
+	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient, queueClient, searchClient)
 	if err != nil {
 		log.Fatalf("❌ Failed to create camera client: %v", err)
 	}
@@ -148,12 +167,13 @@ func main() {
 	}
 
 	// Create system shutdown event
-	if err := storageService.CreateSystemEvent(
+	_, err = storageService.CreateSystemEvent(
 		storage.EventTypeSystemStop,
 		storage.SeverityLow,
 		"System Stopped",
 		"Camera detection system has been stopped",
-	); err != nil {
+	)
+	if err != nil {
 		log.Printf("⚠️  Warning: Could not create shutdown event: %v", err)
 	}
 

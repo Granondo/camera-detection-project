@@ -1,0 +1,55 @@
+# Output files and recordings
+output/
+logs/
+*.mp4
+*.jpg
+*.png
+*.jpeg
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+*.log
+
+# Node modules (handled by individual Dockerfiles)
+node_modules/
+surveillance-ui/node_modules/
+surveillance-next/node_modules/
+surveillance-next/.next/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.exe
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Documentation (but keep swagger docs)
+*.md
+!docs/
+README.md
+
+# Test files
+*_test.go
+test/
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# Database data
+postgres_data/
+redis_data/
+clickhouse_data/
+elasticsearch_data/

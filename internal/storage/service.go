@@ -217,12 +217,12 @@ func (s *Service) GetUnprocessedFrames(limit int) ([]Frame, error) {
 // Event methods
 
 // CreateEvent creates a new event
-func (s *Service) CreateEvent(eventType, severity, title, message string, metadata *string) error {
+func (s *Service) CreateEvent(eventType, severity, title, message string, metadata *string) (*Event, error) {
 	return s.CreateEventWithFrame(eventType, severity, title, message, metadata, nil)
 }
 
 // CreateEventWithFrame creates a new event linked to a specific frame
-func (s *Service) CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) error {
+func (s *Service) CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) (*Event, error) {
 	event := &Event{
 		CameraID:  &s.defaultCameraID,
 		FrameID:   frameID,
@@ -235,7 +235,7 @@ func (s *Service) CreateEventWithFrame(eventType, severity, title, message strin
 	}
 
 	if err := s.eventRepo.CreateEvent(event); err != nil {
-		return fmt.Errorf("failed to create event: %w", err)
+		return nil, fmt.Errorf("failed to create event: %w", err)
 	}
 
 	if frameID != nil {
@@ -243,14 +243,15 @@ func (s *Service) CreateEventWithFrame(eventType, severity, title, message strin
 	} else {
 		log.Printf("Created event: %s (%s) - %s", eventType, severity, title)
 	}
-	return nil
+	return event, nil
 }
 
 // CreateEventWithAnalytics создает событие в PostgreSQL и логирует в ClickHouse
-func (s *Service) CreateEventWithAnalytics(eventType, severity, title, message string, metadata *string, clickhouseClient interface{}) error {
+func (s *Service) CreateEventWithAnalytics(eventType, severity, title, message string, metadata *string, clickhouseClient interface{}) (*Event, error) {
 	// Сначала сохраняем в PostgreSQL
-	if err := s.CreateEvent(eventType, severity, title, message, metadata); err != nil {
-		return err
+	event, err := s.CreateEvent(eventType, severity, title, message, metadata)
+	if err != nil {
+		return nil, err
 	}
 
 	// Потом логируем в ClickHouse если доступен
@@ -280,7 +281,7 @@ func (s *Service) CreateEventWithAnalytics(eventType, severity, title, message s
 		}
 	}
 
-	return nil
+	return event, nil
 }
 
 // ClickHouseLogger интерфейс для логирования в ClickHouse
@@ -289,7 +290,7 @@ type ClickHouseLogger interface {
 }
 
 // CreateSystemEvent creates a system-level event (no camera association)
-func (s *Service) CreateSystemEvent(eventType, severity, title, message string) error {
+func (s *Service) CreateSystemEvent(eventType, severity, title, message string) (*Event, error) {
 	event := &Event{
 		EventType: eventType,
 		Severity:  severity,
@@ -299,11 +300,11 @@ func (s *Service) CreateSystemEvent(eventType, severity, title, message string) 
 	}
 
 	if err := s.eventRepo.CreateEvent(event); err != nil {
-		return fmt.Errorf("failed to create system event: %w", err)
+		return nil, fmt.Errorf("failed to create system event: %w", err)
 	}
 
 	log.Printf("Created system event: %s (%s) - %s", eventType, severity, title)
-	return nil
+	return event, nil
 }
 
 // GetRecentEvents retrieves recent events

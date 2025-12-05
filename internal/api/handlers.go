@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/cache"
+	"camera-detection-project/internal/search"
 	"camera-detection-project/internal/storage"
 )
 
@@ -20,6 +22,7 @@ type Server struct {
 	storage         *storage.Service
 	cache           *cache.CacheService
 	analyticsClient *analytics.ClickHouseClient
+	searchClient    *search.ElasticsearchClient
 	outputDir       string
 }
 
@@ -46,12 +49,14 @@ func NewServerWithAnalytics(
 	storageService *storage.Service,
 	cacheService *cache.CacheService,
 	analyticsClient *analytics.ClickHouseClient,
+	searchClient *search.ElasticsearchClient,
 	outputDir string,
 ) *Server {
 	return &Server{
 		storage:         storageService,
 		cache:           cacheService,
 		analyticsClient: analyticsClient,
+		searchClient:    searchClient,
 		outputDir:       outputDir,
 	}
 }
@@ -142,6 +147,9 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 
 	// Events
 	mux.HandleFunc("/api/events", s.corsMiddleware(s.handleEvents))
+
+	// Search (Elasticsearch)
+	mux.HandleFunc("/api/search", s.corsMiddleware(s.handleSearch))
 
 	// Statistics
 	mux.HandleFunc("/api/stats", s.corsMiddleware(s.handleStats))
@@ -643,6 +651,113 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    events,
+	})
+}
+
+// Search godoc
+// @Summary Search events using Elasticsearch
+// @Description Search events with full-text search and filters
+// @Tags search
+// @Accept json
+// @Produce json
+// @Param q query string false "Search query"
+// @Param severity query string false "Filter by severity"
+// @Param type query string false "Filter by event type"
+// @Param limit query int false "Limit" default(20) minimum(1) maximum(100)
+// @Success 200 {object} APIResponse{data=[]search.DetectionDocument}
+// @Failure 500 {object} APIResponse
+// @Failure 503 {object} APIResponse
+// @Router /search [get]
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Check if Elasticsearch is available
+	if s.searchClient == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "Search service not available")
+		return
+	}
+
+	// Parse query parameters
+	q := r.URL.Query().Get("q")
+	severity := r.URL.Query().Get("severity")
+	eventType := r.URL.Query().Get("type")
+	limit := s.getIntParam(r, "limit", 20)
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Build Elasticsearch query
+	must := []interface{}{}
+
+	// Add text search if provided
+	if q != "" {
+		must = append(must, map[string]interface{}{
+			"multi_match": map[string]interface{}{
+				"query":  q,
+				"fields": []string{"title", "message"},
+			},
+		})
+	}
+
+	// Add filters
+	filters := []interface{}{}
+	if severity != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"severity": severity,
+			},
+		})
+	}
+	if eventType != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"event_type": eventType,
+			},
+		})
+	}
+
+	// Construct query
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must":   must,
+				"filter": filters,
+			},
+		},
+		"size": limit,
+		"sort": []interface{}{
+			map[string]interface{}{"timestamp": "desc"},
+		},
+	}
+
+	// If no must clauses, match all
+	if len(must) == 0 {
+		query["query"] = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []interface{}{
+					map[string]interface{}{"match_all": map[string]interface{}{}},
+				},
+				"filter": filters,
+			},
+		}
+	}
+
+	// Execute search
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	results, err := s.searchClient.Search(ctx, query)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Search failed: %v", err))
+		return
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    results,
 	})
 }
 

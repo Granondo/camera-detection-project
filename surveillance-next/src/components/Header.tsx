@@ -21,6 +21,9 @@ export function Header() {
             <NextLink href="/frames" style={{ color: 'inherit' }}>
               Frames
             </NextLink>
+            <NextLink href="/search" style={{ color: 'inherit' }}>
+              🔍 Search
+            </NextLink>
           </HStack>
         </Flex>
       </Container>

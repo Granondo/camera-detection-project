@@ -60,6 +60,7 @@ type FFmpegClient struct {
 	detectionClient    *http.Client
 	analyticsClient    *analytics.ClickHouseClient
 	queueClient        *queue.RabbitMQClient
+	searchClient       SearchClient // ← NEW: Elasticsearch client
 	cameraID           int // ← ДОБАВЛЕНО для ClickHouse
 	recordingDetections map[int]bool // ← Tracks if recording has any detections
 }
@@ -70,12 +71,17 @@ type StorageService interface {
 	FinishRecording(recordingID int, filePath string) error
 	SaveFrame(filePath string, recordingID *int) (*storage.Frame, error)
 	UpdateFrameProcessed(frameID int, hasDetection bool, thumbnailPath *string) error
-	CreateEvent(eventType, severity, title, message string, metadata *string) error
-	CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) error
+	CreateEvent(eventType, severity, title, message string, metadata *string) (*storage.Event, error)
+	CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) (*storage.Event, error)
 	UpdateCameraStatus(status string) error
 	GetCameraStatus() (*storage.Camera, error) // ← ДОБАВЛЕНО
 	GetRecording(recordingID int) (*storage.Recording, error) // ← ДОБАВЛЕНО для cleanup
 	DeleteRecording(recordingID int) error // ← ДОБАВЛЕНО для cleanup
+}
+
+// SearchClient interface for Elasticsearch
+type SearchClient interface {
+	IndexDocument(ctx context.Context, doc interface{}) error
 }
 
 // NewFFmpegClient creates a new FFmpeg client without storage
@@ -120,6 +126,7 @@ func NewFFmpegClientWithStorageAndAnalytics(
 	storage StorageService,
 	analytics *analytics.ClickHouseClient,
 	queueClient *queue.RabbitMQClient,
+	searchClient SearchClient,
 ) (*FFmpegClient, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -135,6 +142,7 @@ func NewFFmpegClientWithStorageAndAnalytics(
 		detectionClient:     detectionClient,
 		analyticsClient:     analytics,
 		queueClient:         queueClient,
+		searchClient:        searchClient,
 		cameraID:            1, // default
 		recordingDetections: make(map[int]bool),
 	}
@@ -706,7 +714,7 @@ func (c *FFmpegClient) createDetectionEventWithFrame(detections []Detection, fra
 	}
 
 	// Создать событие в PostgreSQL с привязкой к frame
-	err := c.storageService.CreateEventWithFrame(
+	event, err := c.storageService.CreateEventWithFrame(
 		eventType,
 		severity,
 		title,
@@ -718,6 +726,11 @@ func (c *FFmpegClient) createDetectionEventWithFrame(detections []Detection, fra
 	if err != nil {
 		log.Printf("⚠️  Failed to create detection event: %v", err)
 		return
+	}
+
+	// ✅ NEW: Index to Elasticsearch asynchronously
+	if c.searchClient != nil && event != nil {
+		go c.indexEventToElasticsearch(event, framePath)
 	}
 
 	// Логировать в ClickHouse
@@ -753,13 +766,18 @@ func (c *FFmpegClient) createDetectionEventWithFrame(detections []Detection, fra
 
 func (c *FFmpegClient) logDetectionError(errorMsg string) {
 	if c.storageService != nil {
-		c.storageService.CreateEvent(
+		event, err := c.storageService.CreateEvent(
 			"detection_error",
 			"medium",
 			"Detection Service Error",
 			fmt.Sprintf("Detection service failed: %s", errorMsg),
 			nil,
 		)
+
+		// Index to Elasticsearch
+		if err == nil && c.searchClient != nil && event != nil {
+			go c.indexEventToElasticsearch(event, "")
+		}
 	}
 
 	// Логировать в ClickHouse
@@ -782,6 +800,40 @@ func (c *FFmpegClient) logDetectionError(errorMsg string) {
 		if err := c.analyticsClient.InsertSystemEvent(event); err != nil {
 			log.Printf("⚠️  Failed to log error to ClickHouse: %v", err)
 		}
+	}
+}
+
+// indexEventToElasticsearch indexes an event to Elasticsearch
+func (c *FFmpegClient) indexEventToElasticsearch(event *storage.Event, framePath string) {
+	if c.searchClient == nil || event == nil {
+		return
+	}
+
+	// Create search document
+	doc := map[string]interface{}{
+		"event_id":   event.ID,
+		"frame_id":   event.FrameID,
+		"camera_id":  event.CameraID,
+		"timestamp":  event.Timestamp,
+		"event_type": event.EventType,
+		"severity":   event.Severity,
+		"title":      event.Title,
+		"message":    event.Message,
+		"has_frame":  event.FrameID != nil,
+	}
+
+	if framePath != "" {
+		doc["frame_path"] = framePath
+	}
+
+	// Index document
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.searchClient.IndexDocument(ctx, doc); err != nil {
+		log.Printf("⚠️  Failed to index event to Elasticsearch: %v", err)
+	} else {
+		log.Printf("✅ Indexed event #%d to Elasticsearch", event.ID)
 	}
 }
 

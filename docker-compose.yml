@@ -183,6 +183,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     environment:
       - API_PORT=8080
       - DATABASE_HOST=postgres
@@ -201,6 +203,9 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
       - CLICKHOUSE_DATABASE=surveillance
+      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-true}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_INDEX=surveillance-events
     ports:
       - "8080:8080"
     volumes:
@@ -217,7 +222,7 @@ services:
 
   # Camera Detection Application
   camera-detection:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
     container_name: camera-detection
@@ -227,6 +232,8 @@ services:
       redis:
         condition: service_healthy
       clickhouse:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
       detection-service:
         condition: service_started
@@ -268,6 +275,11 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
       - CLICKHOUSE_DATABASE=surveillance
+
+      # Elasticsearch Configuration
+      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-true}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_INDEX=surveillance-events
     volumes:
       - ./output:/app/output
       - ./logs:/app/logs
@@ -357,6 +369,60 @@ services:
     networks:
       - surveillance-network
 
+  # Elasticsearch - Search Engine
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: surveillance-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Kibana - Elasticsearch UI
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: surveillance-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 networks:
   surveillance-network:
     driver: bridge
@@ -375,4 +441,6 @@ volumes:
   camera_logs:
     driver: local
   rabbitmq_data:
+    driver: local
+  elasticsearch_data:
     driver: local

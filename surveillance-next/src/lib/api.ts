@@ -90,6 +90,33 @@ export async function getEvent(id: string): Promise<Event | null> {
   return json.data || null;
 }
 
+export interface SearchParams {
+  q?: string;
+  severity?: string;
+  type?: string;
+  limit?: number;
+}
+
+export async function searchEvents(params?: SearchParams): Promise<Event[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.q) searchParams.set("q", params.q);
+  if (params?.severity) searchParams.set("severity", params.severity);
+  if (params?.type) searchParams.set("type", params.type);
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+
+  const url = `${API_BASE}/api/search?${searchParams}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    return [];
+  }
+
+  const json: ApiResponse<Event[]> = await res.json();
+  return json.data || [];
+}
+
 export async function getFrames(params?: {
   page?: number;
   perPage?: number;

@@ -17,6 +17,7 @@ import (
 	"camera-detection-project/internal/api"
 	"camera-detection-project/internal/cache"
 	"camera-detection-project/internal/config"
+	"camera-detection-project/internal/search"
 	"camera-detection-project/internal/storage"
 
 	_ "camera-detection-project/docs" // swagger docs
@@ -89,14 +90,38 @@ func main() {
 		}
 	}
 
-	// ✅ Create API server with analytics support
-	var apiServer *api.Server
+	// ✅ Initialize Elasticsearch
+	var searchClient *search.ElasticsearchClient
+	if cfg.ElasticsearchEnabled {
+		searchClient, err = search.NewElasticsearchClient(&search.Config{
+			Addresses: []string{cfg.ElasticsearchURL},
+			Index:     cfg.ElasticsearchIndex,
+		})
+
+		if err != nil {
+			log.Printf("⚠️  Warning: Failed to connect to Elasticsearch: %v", err)
+			log.Println("⚠️  Continuing without Elasticsearch (no search indexing)...")
+			searchClient = nil
+		} else {
+			log.Println("✅ Connected to Elasticsearch")
+		}
+	}
+
+	// ✅ Create API server with all services
+	apiServer := api.NewServerWithAnalytics(storageService, cacheService, clickhouseClient, searchClient, cfg.OutputDir)
+
+	// Log enabled services
+	var services []string
 	if clickhouseClient != nil {
-		apiServer = api.NewServerWithAnalytics(storageService, cacheService, clickhouseClient, cfg.OutputDir)
-		log.Println("✅ API Server initialized with ClickHouse analytics")
+		services = append(services, "ClickHouse analytics")
+	}
+	if searchClient != nil {
+		services = append(services, "Elasticsearch search")
+	}
+	if len(services) > 0 {
+		log.Printf("✅ API Server initialized with: %v", services)
 	} else {
-		apiServer = api.NewServerWithCache(storageService, cacheService, cfg.OutputDir)
-		log.Println("✅ API Server initialized without analytics")
+		log.Println("✅ API Server initialized (basic mode)")
 	}
 
 	// Setup routes
@@ -141,6 +166,12 @@ func main() {
 		log.Println("   GET  /api/events           - List events")
 		log.Println("   GET  /api/stats            - Database statistics")
 		log.Println("   GET  /api/camera           - Camera information")
+
+		if searchClient != nil {
+			log.Println("")
+			log.Println("🔍 Search endpoints (Elasticsearch):")
+			log.Println("   GET  /api/search           - Search events (q, severity, type, limit)")
+		}
 
 		if clickhouseClient != nil {
 			log.Println("")
