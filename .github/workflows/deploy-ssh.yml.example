@@ -1,0 +1,57 @@
+# Alternative: Deploy via SSH from GitHub-hosted runners
+# Rename this file to deploy-ssh.yml to use it
+# This is useful if you don't want to run a self-hosted runner
+
+name: Deploy via SSH
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd ~/camera-detection-project
+
+            # Pull latest changes
+            git pull origin main
+
+            # Create .env if not exists
+            if [ ! -f .env ]; then
+              cat > .env << EOF
+            RTSP_URL=${{ secrets.RTSP_URL }}
+            CAMERA_USERNAME=${{ secrets.CAMERA_USERNAME }}
+            CAMERA_PASSWORD=${{ secrets.CAMERA_PASSWORD }}
+            SAVE_FRAMES=true
+            OUTPUT_DIR=/app/output
+            DETECTION_ENABLED=true
+            DATABASE_HOST=postgres
+            DATABASE_PORT=5432
+            DATABASE_USER=postgres
+            DATABASE_PASSWORD=postgres
+            DATABASE_NAME=surveillance
+            DATABASE_SSL_MODE=disable
+            EOF
+            fi
+
+            # Deploy
+            make stop-full
+            make start-full
+
+            # Wait for services
+            sleep 30
+            curl -f http://localhost:8080/api/health
+
+            echo "✅ Deployment successful!"
+            docker-compose ps

@@ -1,0 +1,80 @@
+name: Deploy to Home Server
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # Runs on your home server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create .env file (if not exists)
+        run: |
+          if [ ! -f .env ]; then
+            echo "⚠️  .env file not found, creating from secrets..."
+            cat > .env << EOF
+          RTSP_URL=${{ secrets.RTSP_URL }}
+          CAMERA_USERNAME=${{ secrets.CAMERA_USERNAME }}
+          CAMERA_PASSWORD=${{ secrets.CAMERA_PASSWORD }}
+          SAVE_FRAMES=true
+          OUTPUT_DIR=/app/output
+          DETECTION_ENABLED=true
+          DATABASE_HOST=postgres
+          DATABASE_PORT=5432
+          DATABASE_USER=postgres
+          DATABASE_PASSWORD=postgres
+          DATABASE_NAME=surveillance
+          DATABASE_SSL_MODE=disable
+          EOF
+          fi
+
+      - name: Stop existing services
+        run: |
+          docker-compose down || true
+
+      - name: Build and start services
+        run: |
+          make start-full
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "⏳ Waiting for services to start..."
+          sleep 30
+
+          # Check API health
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+          until curl -f http://localhost:8080/api/health > /dev/null 2>&1; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "❌ API failed to start"
+              docker-compose logs api-server
+              exit 1
+            fi
+            echo "Waiting for API... (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+            sleep 5
+          done
+
+          echo "✅ Deployment successful!"
+
+      - name: Show service status
+        if: always()
+        run: |
+          docker-compose ps
+
+      - name: Deployment notification
+        if: success()
+        run: |
+          echo "🚀 Deployment completed successfully!"
+          echo "Frontend: http://$(hostname -I | awk '{print $1}')/"
+          echo "API: http://$(hostname -I | awk '{print $1}')/api/"
+
+      - name: Cleanup old images
+        if: success()
+        run: |
+          docker image prune -f
