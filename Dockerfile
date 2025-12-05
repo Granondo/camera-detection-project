@@ -16,8 +16,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN go build -o camera-detection cmd/server/main.go
+# Build the application with memory-efficient flags
+# -ldflags="-s -w" strips debug info to reduce memory
+# GOGC=50 runs garbage collector more frequently to save memory
+RUN GOGC=50 go build -ldflags="-s -w" -o camera-detection cmd/server/main.go
 
 # Final stage
 FROM alpine:latest

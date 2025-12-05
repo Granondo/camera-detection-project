@@ -9,8 +9,8 @@ RUN go mod download
 
 COPY . .
 
-# Build API server
-RUN go build -o api_service cmd/api_service/main.go
+# Build API server with memory-efficient flags
+RUN GOGC=50 go build -ldflags="-s -w" -o api_service cmd/api_service/main.go
 
 # Final stage
 FROM alpine:latest

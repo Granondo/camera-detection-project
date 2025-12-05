@@ -232,7 +232,12 @@ detection-health: ## Check detection service health
 # Full system commands with detection
 start-full: ## Start full system with detection
 	@echo "Starting full surveillance system..."
-	docker-compose up --build
+	@echo "Building services sequentially to avoid memory issues..."
+	@docker-compose build api-server
+	@docker-compose build camera-detection
+	@docker-compose build detection-worker
+	@echo "Starting all services..."
+	@docker-compose up -d
 
 stop-full: ## Stop full system
 	@echo "Stopping full surveillance system..."

@@ -48,12 +48,20 @@ interface ApiResponse<T> {
   data: T;
 }
 
+export interface PaginatedEventsResponse {
+  events: Event[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
 export async function getEvents(params?: {
   page?: number;
   perPage?: number;
   type?: string;
   cameraId?: number;
-}): Promise<{ events: Event[]; total: number }> {
+}): Promise<PaginatedEventsResponse> {
   const searchParams = new URLSearchParams();
   if (params?.page) searchParams.set("page", params.page.toString());
   if (params?.perPage) searchParams.set("per_page", params.perPage.toString());
@@ -67,14 +75,25 @@ export async function getEvents(params?: {
   });
 
   if (!res.ok) {
-    return { events: [], total: 0 };
+    return {
+      events: [],
+      total: 0,
+      page: 1,
+      per_page: 20,
+      total_pages: 0,
+    };
   }
 
-  const json: ApiResponse<Event[]> = await res.json();
-  return {
-    events: json.data || [],
-    total: json.data?.length || 0,
-  };
+  const json: ApiResponse<PaginatedEventsResponse> = await res.json();
+  return (
+    json.data || {
+      events: [],
+      total: 0,
+      page: 1,
+      per_page: 20,
+      total_pages: 0,
+    }
+  );
 }
 
 export async function getEvent(id: string): Promise<Event | null> {

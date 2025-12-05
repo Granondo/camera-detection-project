@@ -348,6 +348,45 @@ func (r *EventRepository) GetRecentEvents(limit int) ([]Event, error) {
 	return events, rows.Err()
 }
 
+// GetEventsPaginated retrieves events with pagination support
+func (r *EventRepository) GetEventsPaginated(limit, offset int) ([]Event, int, error) {
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM events`
+	err := r.db.conn.QueryRow(countQuery).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated events
+	query := `
+		SELECT id, camera_id, frame_id, event_type, severity, title, message, metadata,
+			   notified, resolved, timestamp, created_at, resolved_at
+		FROM events
+		ORDER BY timestamp DESC
+		LIMIT $1 OFFSET $2`
+
+	rows, err := r.db.conn.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var event Event
+		err := rows.Scan(&event.ID, &event.CameraID, &event.FrameID, &event.EventType, &event.Severity,
+			&event.Title, &event.Message, &event.Metadata, &event.Notified, &event.Resolved,
+			&event.Timestamp, &event.CreatedAt, &event.ResolvedAt)
+		if err != nil {
+			return nil, 0, err
+		}
+		events = append(events, event)
+	}
+
+	return events, total, rows.Err()
+}
+
 // GetUnnotifiedEvents retrieves events that haven't been notified yet
 func (r *EventRepository) GetUnnotifiedEvents() ([]Event, error) {
 	query := `

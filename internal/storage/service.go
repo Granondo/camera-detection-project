@@ -312,6 +312,11 @@ func (s *Service) GetRecentEvents(limit int) ([]Event, error) {
 	return s.eventRepo.GetRecentEvents(limit)
 }
 
+// GetEventsPaginated retrieves events with pagination
+func (s *Service) GetEventsPaginated(limit, offset int) ([]Event, int, error) {
+	return s.eventRepo.GetEventsPaginated(limit, offset)
+}
+
 // Statistics methods
 
 // GetDatabaseStats returns database statistics

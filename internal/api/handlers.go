@@ -627,8 +627,9 @@ func (s *Server) handleImageServe(w http.ResponseWriter, r *http.Request) {
 // @Tags events
 // @Accept json
 // @Produce json
-// @Param limit query int false "Limit" default(20) minimum(1) maximum(100)
-// @Success 200 {object} APIResponse{data=[]storage.Event}
+// @Param page query int false "Page number" default(1) minimum(1)
+// @Param per_page query int false "Items per page" default(20) minimum(1) maximum(100)
+// @Success 200 {object} APIResponse{data=map[string]interface{}}
 // @Failure 500 {object} APIResponse
 // @Router /events [get]
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -637,20 +638,40 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := s.getIntParam(r, "limit", 20)
-	if limit > 100 {
-		limit = 100
+	page := s.getIntParam(r, "page", 1)
+	if page < 1 {
+		page = 1
 	}
 
-	events, err := s.storage.GetRecentEvents(limit)
+	perPage := s.getIntParam(r, "per_page", 20)
+	if perPage > 100 {
+		perPage = 100
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+
+	// Calculate offset
+	offset := (page - 1) * perPage
+
+	events, total, err := s.storage.GetEventsPaginated(perPage, offset)
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get events: %v", err))
 		return
 	}
 
+	// Calculate total pages
+	totalPages := (total + perPage - 1) / perPage
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
-		Data:    events,
+		Data: map[string]interface{}{
+			"events":      events,
+			"total":       total,
+			"page":        page,
+			"per_page":    perPage,
+			"total_pages": totalPages,
+		},
 	})
 }
 
