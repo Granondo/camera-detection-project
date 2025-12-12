@@ -136,12 +136,20 @@ export async function searchEvents(params?: SearchParams): Promise<Event[]> {
   return json.data || [];
 }
 
+export interface PaginatedFramesResponse {
+  frames: Frame[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
 export async function getFrames(params?: {
   page?: number;
   perPage?: number;
   cameraId?: number;
   minConfidence?: number;
-}): Promise<{ frames: Frame[]; total: number }> {
+}): Promise<PaginatedFramesResponse> {
   const searchParams = new URLSearchParams();
   if (params?.page) searchParams.set("page", params.page.toString());
   if (params?.perPage) searchParams.set("per_page", params.perPage.toString());
@@ -155,8 +163,16 @@ export async function getFrames(params?: {
     next: { revalidate: 30 },
   });
 
+  const emptyResponse = {
+    frames: [],
+    total: 0,
+    page: 1,
+    per_page: 16,
+    total_pages: 0,
+  };
+
   if (!res.ok) {
-    return { frames: [], total: 0 };
+    return emptyResponse;
   }
 
   interface FrameWrapper {
@@ -164,17 +180,34 @@ export async function getFrames(params?: {
     file_exists: boolean;
     image_url: string;
   }
+  
+  // The API returns a different structure for paginated frames
+  interface PaginatedFramesApiResponse {
+    frames: FrameWrapper[];
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+  }
 
-  const json: ApiResponse<FrameWrapper[]> = await res.json();
+  const json: ApiResponse<PaginatedFramesApiResponse> = await res.json();
+  const data = json.data;
 
-  const frames = (json.data || []).map((item) => ({
+  if (!data) {
+    return emptyResponse;
+  }
+
+  const frames = (data.frames || []).map((item) => ({
     ...item.frame,
     image_path: item.image_url,
   }));
 
   return {
     frames,
-    total: frames.length,
+    total: data.total,
+    page: data.page,
+    per_page: data.per_page,
+    total_pages: data.total_pages,
   };
 }
 

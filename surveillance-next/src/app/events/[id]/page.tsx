@@ -1,9 +1,25 @@
-import { Box, Container, Heading, Text, Badge, SimpleGrid, Flex, Button } from '@chakra-ui/react'
+import { Suspense } from 'react'
+import {
+  Box,
+  Container,
+  Heading,
+  Text,
+  Badge,
+  Grid,
+  GridItem,
+  Flex,
+  Button,
+  VStack,
+  HStack,
+} from '@chakra-ui/react'
 import { format } from 'date-fns'
-import Link from 'next/link'
 import { Header } from '@/components/Header'
 import { getEvent } from '@/lib/api'
 import type { Metadata } from 'next'
+import { FrameViewer, FrameViewerSkeleton } from '@/components/FrameViewer'
+import { MetadataViewer } from '@/components/MetadataViewer'
+import { StatCard } from '@/components/StatCard'
+import { NotFound } from '@/components/NotFound'
 
 interface EventDetailPageProps {
   params: Promise<{
@@ -14,32 +30,30 @@ interface EventDetailPageProps {
 export async function generateMetadata({ params }: EventDetailPageProps): Promise<Metadata> {
   const { id } = await params
   const event = await getEvent(id)
-  
+
   if (!event) {
     return {
       title: 'Event Not Found | Surveillance',
     }
   }
-  
+
   return {
     title: `${event.title} | Surveillance`,
-    description: `Detection event from camera ${event.camera_id} at ${event.timestamp}`,
+    description: `Details for detection event #${id}`,
   }
 }
+
+// Define CustomDivider outside the main component to avoid re-creation on render
+const CustomDivider = () => (
+  <Box pt={4} borderTop="1px solid" borderColor="gray.200" />
+)
 
 export default async function EventDetailPage({ params }: EventDetailPageProps) {
   const { id } = await params
   const event = await getEvent(id)
-  
+
   if (!event) {
-    return (
-      <Box minH="100vh">
-        <Header />
-        <Container maxW="container.xl" py={8}>
-          <Text>Event not found</Text>
-        </Container>
-      </Box>
-    )
+    return <NotFound title="Event Not Found" message={`The event with ID #${id} could not be found.`} />
   }
 
   const severityColor = {
@@ -49,77 +63,85 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
     critical: 'red',
   }[event.severity] || 'gray'
 
-  const formattedTime = format(new Date(event.timestamp), 'dd MMM yyyy, HH:mm:ss')
-  const formattedCreatedAt = format(new Date(event.created_at), 'dd MMM yyyy, HH:mm:ss')
-  const formattedResolvedAt = event.resolved_at 
-    ? format(new Date(event.resolved_at), 'dd MMM yyyy, HH:mm:ss')
-    : 'Not resolved'
+  console.log('event', event)
 
   return (
     <Box minH="100vh">
       <Header />
-      
-      <Container maxW="container.xl" py={8}>
-        <Box mb={8}>
-          <Flex align="center" gap={3} mb={3} flexWrap="wrap">
-            <Heading size="xl" color="gray.800">
-              {event.title}
-            </Heading>
-            <Badge colorPalette={severityColor} variant="solid" fontSize="sm">
-              {event.severity}
-            </Badge>
-            <Badge colorPalette={event.resolved ? 'green' : 'orange'} variant="outline" fontSize="sm">
-              {event.resolved ? 'Resolved' : 'Active'}
-            </Badge>
-          </Flex>
-          
-          <Text color="gray.600" fontSize="lg" mb={6}>
-            {event.message}
-          </Text>
 
-          <SimpleGrid columns={{ base: 1, sm: 2, md: 4 }} gap={4} mb={6}>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Camera</Text>
-              <Text fontWeight="medium">{event.camera_id}</Text>
-            </Box>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Event Type</Text>
-              <Text fontWeight="medium">{event.event_type}</Text>
-            </Box>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Timestamp</Text>
-              <Text fontWeight="medium">{formattedTime}</Text>
-            </Box>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Created At</Text>
-              <Text fontWeight="medium">{formattedCreatedAt}</Text>
-            </Box>
-          </SimpleGrid>
+      <Container maxW="6xl" py={8}>
+        <Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={8}>
+          {/* Left Column: Frame Viewer */}
+          <GridItem>
+            <VStack align="stretch">
+              <Heading size="lg">Frame Analysis</Heading>
+              {event.frame_id ? (
+                <Suspense fallback={<FrameViewerSkeleton />}>
+                  <FrameViewer frameId={event.frame_id} />
+                </Suspense>
+              ) : (
+                <Box p={4} bg="gray.100" borderRadius="md" textAlign="center">
+                  <Text color="gray.600">No frame associated with this event.</Text>
+                </Box>
+              )}
+            </VStack>
+          </GridItem>
 
-          {event.frame_id && (
-            <Box bg="blue.50" p={4} borderRadius="md" mb={6}>
-              <Text fontSize="sm" color="gray.600" mb={2}>
-                🖼️ This event was triggered by a frame
-              </Text>
-              <Link href={`/frames/${event.frame_id}`}>
-                <Button colorPalette="blue" size="sm">
-                  View Frame #{event.frame_id}
+          {/* Right Column: Event Details */}
+          <GridItem>
+            <VStack align="stretch" gap={5}>
+              {/* Header */}
+              <Box>
+                <Flex align="flex-start" justify="space-between" gap={2}>
+                  <Heading size="lg" color="gray.800" flex="1">
+                    {event.title}
+                  </Heading>
+                  <Badge colorScheme={severityColor} variant="solid" fontSize="sm" mt={1}>
+                    {event.severity}
+                  </Badge>
+                </Flex>
+                <Text color="gray.500" mt={2}>
+                  {event.message}
+                </Text>
+              </Box>
+
+              {/* Action Buttons */}
+              <HStack>
+                <Button colorScheme="blue" disabled={event.resolved}>
+                  Mark as Resolved
                 </Button>
-              </Link>
-            </Box>
-          )}
+                <Button variant="outline">Acknowledge</Button>
+              </HStack>
+              
+              <CustomDivider />
 
-          <SimpleGrid columns={{ base: 1, sm: 2 }} gap={4}>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Resolved At</Text>
-              <Text fontWeight="medium">{formattedResolvedAt}</Text>
-            </Box>
-            <Box bg="white" p={4} borderRadius="md" shadow="sm">
-              <Text fontSize="sm" color="gray.500" mb={1}>Notified</Text>
-              <Text fontWeight="medium">{event.notified ? 'Yes' : 'No'}</Text>
-            </Box>
-          </SimpleGrid>
-        </Box>
+              {/* Main Details */}
+              <VStack align="stretch" gap={3}>
+                <StatCard label="Status">
+                  <Badge colorScheme={event.resolved ? 'green' : 'orange'} variant="outline">
+                    {event.resolved ? 'Resolved' : 'Active'}
+                  </Badge>
+                </StatCard>
+                <StatCard label="Camera ID">{event.camera_id}</StatCard>
+                <StatCard label="Event Type">{event.event_type}</StatCard>
+                <StatCard label="Event Timestamp">
+                  {format(new Date(event.timestamp), 'dd MMM yyyy, HH:mm:ss')}
+                </StatCard>
+                 <StatCard label="Notified">{event.notified ? 'Yes' : 'No'}</StatCard>
+                {event.resolved_at && (
+                  <StatCard label="Resolved At">
+                    {format(new Date(event.resolved_at), 'dd MMM yyyy, HH:mm:ss')}
+                  </StatCard>
+                )}
+              </VStack>
+              
+              <CustomDivider />
+
+              {/* Metadata */}
+              <MetadataViewer metadata={event.metadata} />
+            </VStack>
+          </GridItem>
+        </Grid>
       </Container>
     </Box>
   )

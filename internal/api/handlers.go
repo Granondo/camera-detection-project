@@ -147,6 +147,7 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 
 	// Events
 	mux.HandleFunc("/api/events", s.corsMiddleware(s.handleEvents))
+	mux.HandleFunc("/api/events/", s.corsMiddleware(s.handleEventByID))
 
 	// Search (Elasticsearch)
 	mux.HandleFunc("/api/search", s.corsMiddleware(s.handleSearch))
@@ -672,6 +673,40 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			"per_page":    perPage,
 			"total_pages": totalPages,
 		},
+	})
+}
+
+// GetEventByID godoc
+// @Summary Get event by ID
+// @Description Получить информацию о конкретном событии
+// @Tags events
+// @Accept json
+// @Produce json
+// @Param id path int true "Event ID"
+// @Success 200 {object} APIResponse{data=storage.Event}
+// @Failure 404 {object} APIResponse
+// @Router /events/{id} [get]
+func (s *Server) handleEventByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.jsonError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	id := s.extractIDFromPath(r.URL.Path, "/api/events/")
+	if id == 0 {
+		s.jsonError(w, http.StatusBadRequest, "Invalid event ID")
+		return
+	}
+
+	event, err := s.storage.GetEvent(id)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, "Event not found")
+		return
+	}
+
+	s.jsonResponse(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    event,
 	})
 }
 

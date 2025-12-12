@@ -372,6 +372,11 @@ func (s *Service) GetRecording(recordingID int) (*Recording, error) {
 	return s.recordingRepo.GetRecording(recordingID)
 }
 
+// GetEvent retrieves a single event by ID
+func (s *Service) GetEvent(eventID int) (*Event, error) {
+	return s.eventRepo.GetEvent(eventID)
+}
+
 // DeleteRecording deletes a recording from database
 func (s *Service) DeleteRecording(recordingID int) error {
 	return s.recordingRepo.DeleteRecording(recordingID)

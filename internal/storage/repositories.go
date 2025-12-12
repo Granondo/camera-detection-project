@@ -318,6 +318,25 @@ func (r *EventRepository) CreateEvent(event *Event) error {
 		Scan(&event.ID, &event.CreatedAt)
 }
 
+// GetEvent retrieves an event by its ID
+func (r *EventRepository) GetEvent(id int) (*Event, error) {
+	event := &Event{}
+	query := `
+		SELECT id, camera_id, frame_id, event_type, severity, title, message, metadata,
+			   notified, resolved, timestamp, created_at, resolved_at
+		FROM events
+		WHERE id = $1`
+	
+	err := r.db.conn.QueryRow(query, id).Scan(&event.ID, &event.CameraID, &event.FrameID, &event.EventType, &event.Severity,
+		&event.Title, &event.Message, &event.Metadata, &event.Notified, &event.Resolved,
+		&event.Timestamp, &event.CreatedAt, &event.ResolvedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("event not found")
+	}
+	return event, err
+}
+
 // GetRecentEvents retrieves recent events
 func (r *EventRepository) GetRecentEvents(limit int) ([]Event, error) {
 	query := `

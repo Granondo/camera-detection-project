@@ -1,14 +1,16 @@
-import { Box, Container, Heading, Text, SimpleGrid } from '@chakra-ui/react'
+import { Suspense } from 'react'
+import { Box, Container, Heading, Text } from '@chakra-ui/react'
 import { Header } from '@/components/Header'
-import { FrameCard } from '@/components/FrameCard'
-import { getFrames } from '@/lib/api'
+import { GridSkeleton } from '@/components/skeletons/GridSkeleton'
+import { FrameCardSkeleton } from '@/components/skeletons/FrameCardSkeleton'
+import { FramesGrid } from './FramesGrid'
+import { FramesToolbar } from './FramesToolbar'
 
 interface FramesPageProps {
-  searchParams: Promise<{
+  searchParams: {
     page?: string
     cameraId?: string
-    minConfidence?: string
-  }>
+  }
 }
 
 export const metadata = {
@@ -16,46 +18,38 @@ export const metadata = {
   description: 'Gallery of frames with detected objects from video surveillance',
 }
 
-export default async function FramesPage({ searchParams }: FramesPageProps) {
-  const params = await searchParams
-  const page = Number(params.page) || 1
-  const cameraId = params.cameraId ? Number(params.cameraId) : undefined
-  const minConfidence = params.minConfidence ? Number(params.minConfidence) : undefined
-
-  const { frames, total } = await getFrames({
-    page,
-    perPage: 16,
-    cameraId,
-    minConfidence,
-  })
+export default function FramesPage({ searchParams }: FramesPageProps) {
+  const page = Number(searchParams?.page) || 1
+  const cameraId = searchParams?.cameraId ? Number(searchParams.cameraId) : undefined
 
   return (
     <Box minH="100vh">
       <Header />
 
       <Container maxW="container.xl" py={8}>
-        <Box mb={8}>
+        <Box mb={4}>
           <Heading size="xl" mb={2} color="gray.800">
             Frames Gallery
           </Heading>
           <Text color="gray.600">
-            {total} frame{total !== 1 ? 's' : ''} with detections
+            Browse frames with detected objects from video surveillance.
           </Text>
         </Box>
 
-        {frames.length > 0 ? (
-          <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 4 }} gap={6}>
-            {frames.map((frame) => (
-              <FrameCard key={frame.id} frame={frame} />
-            ))}
-          </SimpleGrid>
-        ) : (
-          <Box textAlign="center" py={12}>
-            <Text fontSize="lg" color="gray.500">
-              No frames found
-            </Text>
-          </Box>
-        )}
+        <FramesToolbar />
+
+        <Suspense
+          key={`${page}-${cameraId || ''}`}
+          fallback={
+            <GridSkeleton
+              count={16}
+              skeletonCard={FrameCardSkeleton}
+              columns={{ base: 1, sm: 2, lg: 3, xl: 4 }}
+            />
+          }
+        >
+          <FramesGrid page={page} cameraId={cameraId} />
+        </Suspense>
       </Container>
     </Box>
   )
