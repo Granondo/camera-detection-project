@@ -102,6 +102,14 @@ type FrameResponse struct {
 	HasDetection bool           `json:"has_detection"`
 }
 
+type PaginatedFramesResponse struct {
+	Frames     []FrameResponse `json:"frames"`
+	Total      int             `json:"total"`
+	Page       int             `json:"page"`
+	PerPage    int             `json:"per_page"`
+	TotalPages int             `json:"total_pages"`
+}
+
 // ✅ НОВЫЕ СТРУКТУРЫ ДЛЯ АНАЛИТИКИ
 type DetectionsHourlyResponse struct {
 	Hour            string  `json:"hour"`
@@ -490,9 +498,10 @@ func (s *Server) handleVideoDownload(w http.ResponseWriter, r *http.Request) {
 // @Tags frames
 // @Accept json
 // @Produce json
-// @Param limit query int false "Limit" default(50) minimum(1) maximum(200)
+// @Param page query int false "Page number" default(1) minimum(1)
+// @Param per_page query int false "Items per page" default(20) minimum(1) maximum(100)
 // @Param has_detection query bool false "Filter by detection"
-// @Success 200 {object} APIResponse{data=[]FrameResponse}
+// @Success 200 {object} APIResponse{data=PaginatedFramesResponse}
 // @Failure 500 {object} APIResponse
 // @Router /frames [get]
 func (s *Server) handleFrames(w http.ResponseWriter, r *http.Request) {
@@ -501,37 +510,27 @@ func (s *Server) handleFrames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := s.getIntParam(r, "limit", 50)
-	if limit > 200 {
-		limit = 200
+	page := s.getIntParam(r, "page", 1)
+	if page < 1 {
+		page = 1
 	}
 
-	hasDetection := r.URL.Query().Get("has_detection")
-
-	camera, _ := s.storage.GetCameraStatus()
-	if camera == nil {
-		s.jsonError(w, http.StatusInternalServerError, "Camera not found")
-		return
+	perPage := s.getIntParam(r, "per_page", 20)
+	if perPage > 100 {
+		perPage = 100
+	}
+	if perPage < 1 {
+		perPage = 20
 	}
 
-	var frames []storage.Frame
-	var err error
+	offset := (page - 1) * perPage
 
-	if hasDetection == "true" {
-		frames, err = s.storage.GetFramesWithDetection(camera.ID, limit)
-	} else {
-		// Get recent frames
-		end := time.Now()
-		start := end.Add(-24 * time.Hour)
-		frames, err = s.storage.GetFramesByTimeRange(camera.ID, start, end, limit)
-	}
-
+	frames, total, err := s.storage.GetFramesPaginated(perPage, offset)
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get frames: %v", err))
 		return
 	}
 
-	// Enrich frames with URLs
 	enrichedFrames := make([]FrameResponse, 0, len(frames))
 	for _, frame := range frames {
 		enriched := FrameResponse{
@@ -546,9 +545,17 @@ func (s *Server) handleFrames(w http.ResponseWriter, r *http.Request) {
 		enrichedFrames = append(enrichedFrames, enriched)
 	}
 
+	totalPages := (total + perPage - 1) / perPage
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
-		Data:    enrichedFrames,
+		Data: PaginatedFramesResponse{
+			Frames:     enrichedFrames,
+			Total:      total,
+			Page:       page,
+			PerPage:    perPage,
+			TotalPages: totalPages,
+		},
 	})
 }
 

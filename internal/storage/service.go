@@ -387,6 +387,16 @@ func (s *Service) GetFrame(frameID int) (*Frame, error) {
 	return s.frameRepo.GetFrame(frameID)
 }
 
+// GetAllFrames retrieves all frames
+func (s *Service) GetAllFrames() ([]Frame, error) {
+	return s.frameRepo.GetAllFrames()
+}
+
+// GetFramesPaginated retrieves frames with pagination support
+func (s *Service) GetFramesPaginated(limit, offset int) ([]Frame, int, error) {
+	return s.frameRepo.GetFramesPaginated(limit, offset)
+}
+
 // GetFramesByTimeRange retrieves frames within a time range
 func (s *Service) GetFramesByTimeRange(cameraID int, start, end time.Time, limit int) ([]Frame, error) {
 	return s.frameRepo.GetFramesByTimeRange(cameraID, start, end, limit)

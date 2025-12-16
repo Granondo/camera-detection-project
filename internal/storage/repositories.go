@@ -304,6 +304,74 @@ func (r *FrameRepository) GetUnprocessedFrames(limit int) ([]Frame, error) {
 	return frames, rows.Err()
 }
 
+// GetAllFrames retrieves all frames
+func (r *FrameRepository) GetAllFrames() ([]Frame, error) {
+	query := `
+		SELECT id, recording_id, camera_id, file_path, thumbnail_path, file_size,
+			   width, height, timestamp, has_detection, processed, created_at
+		FROM frames 
+		ORDER BY timestamp DESC`
+
+	rows, err := r.db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var frames []Frame
+	for rows.Next() {
+		var frame Frame
+		err := rows.Scan(&frame.ID, &frame.RecordingID, &frame.CameraID, &frame.FilePath,
+			&frame.ThumbnailPath, &frame.FileSize, &frame.Width, &frame.Height,
+			&frame.Timestamp, &frame.HasDetection, &frame.Processed, &frame.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, frame)
+	}
+
+	return frames, rows.Err()
+}
+
+// GetFramesPaginated retrieves frames with pagination support
+func (r *FrameRepository) GetFramesPaginated(limit, offset int) ([]Frame, int, error) {
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM frames`
+	err := r.db.conn.QueryRow(countQuery).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated frames
+	query := `
+		SELECT id, recording_id, camera_id, file_path, thumbnail_path, file_size,
+			   width, height, timestamp, has_detection, processed, created_at
+		FROM frames
+		ORDER BY timestamp DESC
+		LIMIT $1 OFFSET $2`
+
+	rows, err := r.db.conn.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var frames []Frame
+	for rows.Next() {
+		var frame Frame
+		err := rows.Scan(&frame.ID, &frame.RecordingID, &frame.CameraID, &frame.FilePath,
+			&frame.ThumbnailPath, &frame.FileSize, &frame.Width, &frame.Height,
+			&frame.Timestamp, &frame.HasDetection, &frame.Processed, &frame.CreatedAt)
+		if err != nil {
+			return nil, 0, err
+		}
+		frames = append(frames, frame)
+	}
+
+	return frames, total, rows.Err()
+}
+
 // Event Repository Methods
 
 // CreateEvent creates a new event record
