@@ -395,7 +395,7 @@ clickhouse-clear: ## Clear all data from ClickHouse
 
 clickhouse-web: ## Open ClickHouse web UI (Tabix)
 	@echo "🌐 Opening Tabix UI..."
-	@open http://localhost:8083 || xdg-open http://localhost:8083 || start http://localhost:8083w
+	@open http://localhost:8083 || xdg-open http://localhost:8083 || start http://localhost:8083
 
 # RabbitMQ commands
 rabbitmq-status: ## Check RabbitMQ status

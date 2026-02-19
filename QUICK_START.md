@@ -162,6 +162,5 @@ sudo ufw allow 3000/tcp  # For direct access
 ## More Help
 
 - **Deployment**: See `DEPLOYMENT.md`
-- **CI/CD**: See `CI_CD_SETUP.md`
-- **Docker Issues**: See `DOCKER_BUILD.md`
+- **Project Overview**: See `Readme.md`
 - **GitHub Issues**: https://github.com/YOUR_USERNAME/camera-detection-project/issues

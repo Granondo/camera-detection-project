@@ -384,8 +384,15 @@ func (c *FFmpegClient) handleNewFrame(framePath string) {
 
 	frame, err := c.storageService.SaveFrame(framePath, c.currentRecordingID)
 	if err != nil {
-		log.Printf("⚠️  Warning: Could not save frame to database: %v", err)
-		return
+		// Recording can be deleted by cleanup race; retry without recording_id.
+		if strings.Contains(err.Error(), "frames_recording_id_fkey") {
+			log.Printf("⚠️  Recording link is stale, retrying frame save without recording_id: %v", err)
+			frame, err = c.storageService.SaveFrame(framePath, nil)
+		}
+		if err != nil {
+			log.Printf("⚠️  Warning: Could not save frame to database: %v", err)
+			return
+		}
 	}
 
 	log.Printf("💾 Saved frame to database (ID: %d)", frame.ID)

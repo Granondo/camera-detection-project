@@ -37,7 +37,7 @@ jobs:
             cd /path/to/your/camera-detection-project
             
             # Execute the deployment script
-            bash bin/deploy.sh
+            bash deploy.sh
             
             # (Optional) Prune old docker images and volumes to save space
             docker system prune -af
