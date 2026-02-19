@@ -124,7 +124,12 @@ func main() {
 	}
 
 	// Create camera client with storage, analytics, and search
-	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient, queueClient, searchClient)
+	// Avoid passing typed nil pointer as interface — must pass untyped nil
+	var sc camera.SearchClient
+	if searchClient != nil {
+		sc = searchClient
+	}
+	client, err := camera.NewFFmpegClientWithStorageAndAnalytics(cfg, storageService, clickhouseClient, queueClient, sc)
 	if err != nil {
 		log.Fatalf("❌ Failed to create camera client: %v", err)
 	}

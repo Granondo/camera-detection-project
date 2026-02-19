@@ -10,6 +10,8 @@ const EVENT_TYPES = [
   'sound_detected',
   'camera_offline',
   'camera_online',
+  'detection_error',
+  'system_error',
 ]
 
 export function EventsToolbar() {

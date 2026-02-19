@@ -570,6 +570,12 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 		return false, nil, 0
 	}
 
+	// Check if frame still exists (may have been deleted by another worker)
+	if _, err := os.Stat(framePath); os.IsNotExist(err) {
+		log.Printf("⏭️  Frame #%d already processed by another worker, skipping", frameNum)
+		return false, nil, 0
+	}
+
 	log.Printf("🔍 Running YOLO detection on frame #%d: %s", frameNum, filepath.Base(framePath))
 
 	detectionPath := strings.Replace(framePath, c.config.OutputDir, "/app/data", 1)
@@ -599,6 +605,11 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 			lastErr = err
 			log.Printf("⚠️  Detection attempt %d/%d failed: %v", attempt, c.config.DetectionService.MaxRetries, err)
 			if attempt < c.config.DetectionService.MaxRetries {
+				// Check if frame was deleted by another worker before retrying
+				if _, statErr := os.Stat(framePath); os.IsNotExist(statErr) {
+					log.Printf("⏭️  Frame #%d deleted during retry, skipping", frameNum)
+					return false, nil, 0
+				}
 				time.Sleep(time.Duration(attempt) * time.Second)
 				continue
 			}
@@ -608,8 +619,14 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("detection service returned status: %d", resp.StatusCode)
 			log.Printf("⚠️  Detection attempt %d/%d failed with status: %d", attempt, c.config.DetectionService.MaxRetries, resp.StatusCode)
+			// If frame was deleted by another worker, stop retrying
+			if _, statErr := os.Stat(framePath); os.IsNotExist(statErr) {
+				log.Printf("⏭️  Frame #%d deleted during retry, skipping", frameNum)
+				return false, nil, 0
+			}
 			if attempt < c.config.DetectionService.MaxRetries {
 				time.Sleep(time.Duration(attempt) * time.Second)
 				continue
@@ -634,12 +651,24 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 	}
 
 	if lastErr != nil {
+		// If the frame no longer exists, another worker already processed and deleted it — skip silently
+		if _, statErr := os.Stat(framePath); os.IsNotExist(statErr) {
+			log.Printf("⏭️  Frame #%d no longer exists after detection failure, skipping (another worker handled it)", frameNum)
+			return false, nil, 0
+		}
 		log.Printf("❌ All detection attempts failed: %v", lastErr)
 		c.logDetectionError(lastErr.Error())
 		return false, nil, 0
 	}
 
 	if !result.Success {
+		// "Image Not Found" means another worker deleted the frame — not a real error
+		if strings.Contains(result.Error, "not found") || strings.Contains(result.Error, "Not Found") || strings.Contains(result.Error, "does not exist") {
+			if _, statErr := os.Stat(framePath); os.IsNotExist(statErr) {
+				log.Printf("⏭️  Frame #%d was deleted by another worker, skipping", frameNum)
+				return false, nil, 0
+			}
+		}
 		log.Printf("❌ Detection failed: %s", result.Error)
 		c.logDetectionError(result.Error)
 		return false, nil, 0

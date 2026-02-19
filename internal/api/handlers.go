@@ -662,7 +662,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// Calculate offset
 	offset := (page - 1) * perPage
 
-	events, total, err := s.storage.GetEventsPaginated(perPage, offset)
+	eventType := r.URL.Query().Get("type")
+	events, total, err := s.storage.GetEventsPaginated(perPage, offset, eventType)
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get events: %v", err))
 		return
@@ -818,9 +819,38 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transform results to include "id" field matching "event_id" for frontend compatibility
+	transformed := make([]map[string]interface{}, 0, len(results))
+	for _, doc := range results {
+		item := map[string]interface{}{
+			"id":         doc.EventID,
+			"event_id":   doc.EventID,
+			"camera_id":  doc.CameraID,
+			"timestamp":  doc.Timestamp,
+			"event_type": doc.EventType,
+			"severity":   doc.Severity,
+			"title":      doc.Title,
+			"message":    doc.Message,
+			"has_frame":  doc.HasFrame,
+		}
+		if doc.FrameID != nil {
+			item["frame_id"] = *doc.FrameID
+		}
+		if doc.FramePath != "" {
+			item["frame_path"] = doc.FramePath
+		}
+		if doc.Detections != nil {
+			item["detections"] = doc.Detections
+		}
+		if doc.Metadata != nil {
+			item["metadata"] = doc.Metadata
+		}
+		transformed = append(transformed, item)
+	}
+
 	s.jsonResponse(w, http.StatusOK, APIResponse{
 		Success: true,
-		Data:    results,
+		Data:    transformed,
 	})
 }
 

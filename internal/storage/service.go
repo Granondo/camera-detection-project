@@ -312,9 +312,9 @@ func (s *Service) GetRecentEvents(limit int) ([]Event, error) {
 	return s.eventRepo.GetRecentEvents(limit)
 }
 
-// GetEventsPaginated retrieves events with pagination
-func (s *Service) GetEventsPaginated(limit, offset int) ([]Event, int, error) {
-	return s.eventRepo.GetEventsPaginated(limit, offset)
+// GetEventsPaginated retrieves events with pagination and optional type filter
+func (s *Service) GetEventsPaginated(limit, offset int, eventType string) ([]Event, int, error) {
+	return s.eventRepo.GetEventsPaginated(limit, offset, eventType)
 }
 
 // Statistics methods

@@ -7,10 +7,10 @@ import { EventsGrid } from './EventsGrid'
 import { EventsToolbar } from './EventsToolbar'
 
 interface EventsPageProps {
-  searchParams: {
+  searchParams: Promise<{
     page?: string
     type?: string
-  }
+  }>
 }
 
 export const metadata = {
@@ -18,9 +18,10 @@ export const metadata = {
   description: 'Browse all detection events from video surveillance',
 }
 
-export default function EventsPage({ searchParams }: EventsPageProps) {
-  const page = Number(searchParams?.page) || 1
-  const type = searchParams?.type
+export default async function EventsPage({ searchParams }: EventsPageProps) {
+  const params = await searchParams
+  const page = Number(params?.page) || 1
+  const type = params?.type
 
   return (
     <Box minH="100vh">
@@ -36,7 +37,9 @@ export default function EventsPage({ searchParams }: EventsPageProps) {
           </Text>
         </Box>
 
-        <EventsToolbar />
+        <Suspense fallback={null}>
+          <EventsToolbar />
+        </Suspense>
 
         <Suspense
           key={`${page}-${type || ''}`}

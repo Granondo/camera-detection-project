@@ -130,6 +130,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
       detection-service:
         condition: service_started
     environment:
@@ -161,9 +163,14 @@ services:
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-clickhouse_password}
       - CLICKHOUSE_DATABASE=surveillance
       
+      # Elasticsearch
+      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-true}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_INDEX=surveillance-events
+
       - OUTPUT_DIR=/app/output
     volumes:
-      - ./output:/app/output:ro
+      - ./output:/app/output
       - ./logs:/app/logs
     restart: unless-stopped
     networks:

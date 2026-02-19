@@ -236,6 +236,7 @@ start-full: ## Start full system with detection
 	@docker-compose build api-server
 	@docker-compose build camera-detection
 	@docker-compose build detection-worker
+	@docker-compose build surveillance-next
 	@echo "Starting all services..."
 	@docker-compose up -d
 

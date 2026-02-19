@@ -7,10 +7,10 @@ import { FramesGrid } from './FramesGrid'
 import { FramesToolbar } from './FramesToolbar'
 
 interface FramesPageProps {
-  searchParams: {
+  searchParams: Promise<{
     page?: string
     cameraId?: string
-  }
+  }>
 }
 
 export const metadata = {
@@ -18,9 +18,10 @@ export const metadata = {
   description: 'Gallery of frames with detected objects from video surveillance',
 }
 
-export default function FramesPage({ searchParams }: FramesPageProps) {
-  const page = Number(searchParams?.page) || 1
-  const cameraId = searchParams?.cameraId ? Number(searchParams.cameraId) : undefined
+export default async function FramesPage({ searchParams }: FramesPageProps) {
+  const params = await searchParams
+  const page = Number(params?.page) || 1
+  const cameraId = params?.cameraId ? Number(params.cameraId) : undefined
 
   return (
     <Box minH="100vh">
@@ -36,7 +37,9 @@ export default function FramesPage({ searchParams }: FramesPageProps) {
           </Text>
         </Box>
 
-        <FramesToolbar />
+        <Suspense fallback={null}>
+          <FramesToolbar />
+        </Suspense>
 
         <Suspense
           key={`${page}-${cameraId || ''}`}
