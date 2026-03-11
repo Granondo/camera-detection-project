@@ -85,15 +85,24 @@ export async function getEvents(params?: {
   }
 
   const json: ApiResponse<PaginatedEventsResponse> = await res.json();
-  return (
-    json.data || {
+  const data = json.data;
+  if (!data) {
+    return {
       events: [],
       total: 0,
       page: 1,
       per_page: 20,
       total_pages: 0,
-    }
-  );
+    };
+  }
+
+  return {
+    events: Array.isArray(data.events) ? data.events : [],
+    total: Number(data.total) || 0,
+    page: Number(data.page) || 1,
+    per_page: Number(data.per_page) || 20,
+    total_pages: Number(data.total_pages) || 0,
+  };
 }
 
 export async function getEvent(id: string): Promise<Event | null> {

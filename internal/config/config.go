@@ -27,6 +27,8 @@ type Config struct {
 	OutputDir        string
 	FFmpegPath       string
 	DetectionEnabled bool
+	StorageLimitGB   float64
+	StorageCheckSec  int
 
 	// Database settings
 	DatabaseHost     string
@@ -83,6 +85,8 @@ func Load() (*Config, error) {
 		OutputDir:        getEnv("OUTPUT_DIR", "./output"),
 		FFmpegPath:       getEnv("FFMPEG_PATH", "ffmpeg"),
 		DetectionEnabled: getBoolEnv("DETECTION_ENABLED", true),
+		StorageLimitGB:   getFloatEnv("STORAGE_LIMIT_GB", 70.0),
+		StorageCheckSec:  getIntEnv("STORAGE_CHECK_INTERVAL_SEC", 300),
 
 		// Database configuration
 		DatabaseHost:     getEnv("DATABASE_HOST", "localhost"),
@@ -220,4 +224,11 @@ func getFloatEnv(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
+}
+
+func (c *Config) StorageLimitBytes() int64 {
+	if c.StorageLimitGB <= 0 {
+		return 0
+	}
+	return int64(c.StorageLimitGB * 1024 * 1024 * 1024)
 }

@@ -106,6 +106,8 @@ make docker-run
 | `OUTPUT_DIR` | Директория для сохранения | `./output` |
 | `FFMPEG_PATH` | Путь к FFmpeg | `ffmpeg` |
 | `DETECTION_ENABLED` | Включить детекцию | `true` |
+| `STORAGE_LIMIT_GB` | Лимит на папку `output` (очистка старых файлов при превышении) | `70` |
+| `STORAGE_CHECK_INTERVAL_SEC` | Интервал проверки лимита хранилища (сек) | `300` |
 
 ## 📊 ClickHouse Аналитика
 

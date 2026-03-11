@@ -257,6 +257,8 @@ services:
       - OUTPUT_DIR=/app/output
       - FFMPEG_PATH=ffmpeg
       - DETECTION_ENABLED=${DETECTION_ENABLED:-true}
+      - STORAGE_LIMIT_GB=${STORAGE_LIMIT_GB:-70}
+      - STORAGE_CHECK_INTERVAL_SEC=${STORAGE_CHECK_INTERVAL_SEC:-300}
       
       # Detection Service Configuration
       - DETECTION_SERVICE_URL=http://detection-service:5000

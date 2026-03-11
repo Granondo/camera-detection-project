@@ -10,9 +10,9 @@ import (
 	"camera-detection-project/internal/analytics"
 	"camera-detection-project/internal/camera"
 	"camera-detection-project/internal/config"
+	"camera-detection-project/internal/queue"
 	"camera-detection-project/internal/search"
 	"camera-detection-project/internal/storage"
-	"camera-detection-project/internal/queue"
 )
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 		clickhouseClient = nil
 	} else {
 		defer clickhouseClient.Close()
-		
+
 		// Автоматически создать таблицы
 		if err := clickhouseClient.Migrate(); err != nil {
 			log.Printf("⚠️  Warning: ClickHouse migration failed: %v", err)
@@ -109,14 +109,14 @@ func main() {
 	// Log to ClickHouse if available
 	if clickhouseClient != nil {
 		event := &analytics.SystemEvent{
-			Timestamp:  time.Now(),
-			EventType:  "system_start",
-			Severity:   "low",
-			Service:    "camera-service",
-			Title:      "System Started",
-			Message:    "Camera detection system has been started",
-			CameraID:   nil,
-			Metadata:   "{}",
+			Timestamp: time.Now(),
+			EventType: "system_start",
+			Severity:  "low",
+			Service:   "camera-service",
+			Title:     "System Started",
+			Message:   "Camera detection system has been started",
+			CameraID:  nil,
+			Metadata:  "{}",
 		}
 		if err := clickhouseClient.InsertSystemEvent(event); err != nil {
 			log.Printf("⚠️  Warning: Could not log to ClickHouse: %v", err)
@@ -144,10 +144,31 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			if err := storageService.UpdateCameraPing(); err != nil {
 				log.Printf("⚠️  Warning: Could not update camera ping: %v", err)
+			}
+		}
+	}()
+
+	// Periodically enforce output storage budget.
+	go func() {
+		interval := time.Duration(cfg.StorageCheckSec) * time.Second
+		if interval <= 0 {
+			interval = 5 * time.Minute
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// Run once on startup too.
+		if err := storageService.EnforceStorageLimit(cfg.StorageLimitBytes()); err != nil {
+			log.Printf("⚠️  Storage cleanup failed: %v", err)
+		}
+
+		for range ticker.C {
+			if err := storageService.EnforceStorageLimit(cfg.StorageLimitBytes()); err != nil {
+				log.Printf("⚠️  Storage cleanup failed: %v", err)
 			}
 		}
 	}()
@@ -185,14 +206,14 @@ func main() {
 	// Log to ClickHouse
 	if clickhouseClient != nil {
 		event := &analytics.SystemEvent{
-			Timestamp:  time.Now(),
-			EventType:  "system_stop",
-			Severity:   "low",
-			Service:    "camera-service",
-			Title:      "System Stopped",
-			Message:    "Camera detection system has been stopped",
-			CameraID:   nil,
-			Metadata:   "{}",
+			Timestamp: time.Now(),
+			EventType: "system_stop",
+			Severity:  "low",
+			Service:   "camera-service",
+			Title:     "System Stopped",
+			Message:   "Camera detection system has been stopped",
+			CameraID:  nil,
+			Metadata:  "{}",
 		}
 		if err := clickhouseClient.InsertSystemEvent(event); err != nil {
 			log.Printf("⚠️  Warning: Could not log to ClickHouse: %v", err)

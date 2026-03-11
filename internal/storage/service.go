@@ -22,6 +22,36 @@ type Service struct {
 	defaultCameraID int // ID of the main camera
 }
 
+func (s *Service) ensureDefaultCamera() error {
+	camera, err := s.cameraRepo.GetCamera(s.defaultCameraID)
+	if err == nil && camera != nil {
+		return nil
+	}
+
+	cameras, err := s.cameraRepo.GetAllCameras()
+	if err != nil {
+		return err
+	}
+	if len(cameras) > 0 {
+		s.defaultCameraID = cameras[0].ID
+		return nil
+	}
+
+	cameraToCreate := &Camera{
+		Name:     "Main Camera",
+		RTSPURL:  s.config.RTSPURL,
+		Username: s.config.Username,
+		Password: s.config.Password,
+		Status:   CameraStatusActive,
+	}
+	if err := s.cameraRepo.CreateCamera(cameraToCreate); err != nil {
+		return fmt.Errorf("failed to create default camera: %w", err)
+	}
+	s.defaultCameraID = cameraToCreate.ID
+	log.Printf("Created default camera with ID: %d", cameraToCreate.ID)
+	return nil
+}
+
 // NewService creates a new storage service
 func NewService(cfg *config.Config) (*Service, error) {
 	// Create database configuration
@@ -114,6 +144,10 @@ func (s *Service) initializeDefaultCamera() error {
 
 // StartRecording creates a new recording record
 func (s *Service) StartRecording(filePath string) (*Recording, error) {
+	if err := s.ensureDefaultCamera(); err != nil {
+		return nil, err
+	}
+
 	recording := &Recording{
 		CameraID:  s.defaultCameraID,
 		FilePath:  filePath,
@@ -167,6 +201,10 @@ func (s *Service) FinishRecording(recordingID int, filePath string) error {
 
 // SaveFrame creates a new frame record
 func (s *Service) SaveFrame(filePath string, recordingID *int) (*Frame, error) {
+	if err := s.ensureDefaultCamera(); err != nil {
+		return nil, err
+	}
+
 	// Get file information
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
@@ -326,11 +364,17 @@ func (s *Service) GetDatabaseStats() (map[string]int, error) {
 
 // GetCameraStatus returns current camera status
 func (s *Service) GetCameraStatus() (*Camera, error) {
+	if err := s.ensureDefaultCamera(); err != nil {
+		return nil, err
+	}
 	return s.cameraRepo.GetCamera(s.defaultCameraID)
 }
 
 // UpdateCameraStatus updates camera status
 func (s *Service) UpdateCameraStatus(status string) error {
+	if err := s.ensureDefaultCamera(); err != nil {
+		return err
+	}
 	return s.cameraRepo.UpdateCameraStatus(s.defaultCameraID, status)
 }
 
@@ -358,6 +402,122 @@ func (s *Service) GetStorageUsage() (int64, error) {
 	})
 
 	return totalSize, err
+}
+
+// EnforceStorageLimit keeps output directory usage below maxBytes.
+// Cleanup order: oldest completed recordings, then oldest standalone frames.
+func (s *Service) EnforceStorageLimit(maxBytes int64) error {
+	if maxBytes <= 0 {
+		return nil
+	}
+
+	usage, err := s.GetStorageUsage()
+	if err != nil {
+		return err
+	}
+	if usage <= maxBytes {
+		return nil
+	}
+
+	target := int64(float64(maxBytes) * 0.90)
+	if target <= 0 {
+		target = maxBytes
+	}
+	bytesToFree := usage - target
+	var freed int64
+
+	log.Printf("🧹 Storage limit exceeded: usage=%d bytes, limit=%d bytes, target=%d bytes",
+		usage, maxBytes, target)
+
+	// 1) Remove oldest completed recordings (cascade removes linked frames/events/detections).
+	recordingRows, err := s.db.GetConnection().Query(`
+		SELECT id, file_path, COALESCE(file_size, 0)
+		FROM recordings
+		WHERE status = 'completed'
+		ORDER BY COALESCE(end_time, start_time, created_at) ASC
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to list recordings for cleanup: %w", err)
+	}
+	defer recordingRows.Close()
+
+	for recordingRows.Next() && freed < bytesToFree {
+		var id int
+		var filePath string
+		var fileSize int64
+		if err := recordingRows.Scan(&id, &filePath, &fileSize); err != nil {
+			return fmt.Errorf("failed to scan recording for cleanup: %w", err)
+		}
+
+		size := fileSize
+		if st, statErr := os.Stat(filePath); statErr == nil {
+			size = st.Size()
+		}
+
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			log.Printf("⚠️  Cleanup: could not remove recording file %s: %v", filePath, err)
+			continue
+		}
+
+		if err := s.recordingRepo.DeleteRecording(id); err != nil {
+			log.Printf("⚠️  Cleanup: could not delete recording row %d: %v", id, err)
+			continue
+		}
+
+		freed += size
+		log.Printf("🗑️  Cleanup: removed recording id=%d size=%d", id, size)
+	}
+	if err := recordingRows.Err(); err != nil {
+		return fmt.Errorf("cleanup recording iteration failed: %w", err)
+	}
+
+	// 2) If still above budget, remove oldest standalone frames.
+	if freed < bytesToFree {
+		frameRows, err := s.db.GetConnection().Query(`
+			SELECT id, file_path, COALESCE(file_size, 0)
+			FROM frames
+			WHERE recording_id IS NULL
+			ORDER BY timestamp ASC
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to list standalone frames for cleanup: %w", err)
+		}
+		defer frameRows.Close()
+
+		for frameRows.Next() && freed < bytesToFree {
+			var id int
+			var filePath string
+			var fileSize int64
+			if err := frameRows.Scan(&id, &filePath, &fileSize); err != nil {
+				return fmt.Errorf("failed to scan frame for cleanup: %w", err)
+			}
+
+			size := fileSize
+			if st, statErr := os.Stat(filePath); statErr == nil {
+				size = st.Size()
+			}
+
+			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+				log.Printf("⚠️  Cleanup: could not remove frame file %s: %v", filePath, err)
+				continue
+			}
+
+			if _, err := s.db.GetConnection().Exec(`DELETE FROM frames WHERE id = $1`, id); err != nil {
+				log.Printf("⚠️  Cleanup: could not delete frame row %d: %v", id, err)
+				continue
+			}
+
+			freed += size
+			log.Printf("🗑️  Cleanup: removed standalone frame id=%d size=%d", id, size)
+		}
+		if err := frameRows.Err(); err != nil {
+			return fmt.Errorf("cleanup frame iteration failed: %w", err)
+		}
+	}
+
+	newUsage, _ := s.GetStorageUsage()
+	log.Printf("✅ Storage cleanup finished: freed=%d bytes, current_usage=%d bytes", freed, newUsage)
+	return nil
 }
 
 // Добавить эти методы в internal/storage/service.go

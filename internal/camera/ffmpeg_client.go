@@ -47,22 +47,23 @@ type BoundingBox struct {
 }
 
 type FFmpegClient struct {
-	config             *config.Config
-	cmd                *exec.Cmd
-	ctx                context.Context
-	cancel             context.CancelFunc
-	wg                 sync.WaitGroup
-	frameCount         int
-	mu                 sync.Mutex
-	storageService     StorageService
-	currentRecording   *storage.Recording
-	currentRecordingID *int // ← ДОБАВЛЕНО для tracking
-	detectionClient    *http.Client
-	analyticsClient    *analytics.ClickHouseClient
-	queueClient        *queue.RabbitMQClient
-	searchClient       SearchClient // ← NEW: Elasticsearch client
-	cameraID           int // ← ДОБАВЛЕНО для ClickHouse
-	recordingDetections map[int]bool // ← Tracks if recording has any detections
+	config              *config.Config
+	cmd                 *exec.Cmd
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
+	frameCount          int
+	mu                  sync.Mutex
+	storageService      StorageService
+	currentRecording    *storage.Recording
+	currentRecordingID  *int // ← ДОБАВЛЕНО для tracking
+	detectionClient     *http.Client
+	analyticsClient     *analytics.ClickHouseClient
+	queueClient         *queue.RabbitMQClient
+	searchClient        SearchClient         // ← NEW: Elasticsearch client
+	cameraID            int                  // ← ДОБАВЛЕНО для ClickHouse
+	recordingDetections map[int]bool         // ← Tracks if recording has any detections
+	processedSegments   map[string]time.Time // Deduplicate repeated fsnotify events for same segment
 }
 
 // StorageService interface to work with storage package
@@ -74,9 +75,9 @@ type StorageService interface {
 	CreateEvent(eventType, severity, title, message string, metadata *string) (*storage.Event, error)
 	CreateEventWithFrame(eventType, severity, title, message string, metadata *string, frameID *int) (*storage.Event, error)
 	UpdateCameraStatus(status string) error
-	GetCameraStatus() (*storage.Camera, error) // ← ДОБАВЛЕНО
+	GetCameraStatus() (*storage.Camera, error)                // ← ДОБАВЛЕНО
 	GetRecording(recordingID int) (*storage.Recording, error) // ← ДОБАВЛЕНО для cleanup
-	DeleteRecording(recordingID int) error // ← ДОБАВЛЕНО для cleanup
+	DeleteRecording(recordingID int) error                    // ← ДОБАВЛЕНО для cleanup
 }
 
 // SearchClient interface for Elasticsearch
@@ -94,6 +95,7 @@ func NewFFmpegClient(cfg *config.Config) (*FFmpegClient, error) {
 		cancel:              cancel,
 		cameraID:            1, // default
 		recordingDetections: make(map[int]bool),
+		processedSegments:   make(map[string]time.Time),
 	}
 
 	return client, nil
@@ -115,6 +117,7 @@ func NewFFmpegClientWithStorage(cfg *config.Config, storage StorageService) (*FF
 		detectionClient:     detectionClient,
 		cameraID:            1, // default
 		recordingDetections: make(map[int]bool),
+		processedSegments:   make(map[string]time.Time),
 	}
 
 	return client, nil
@@ -145,6 +148,7 @@ func NewFFmpegClientWithStorageAndAnalytics(
 		searchClient:        searchClient,
 		cameraID:            1, // default
 		recordingDetections: make(map[int]bool),
+		processedSegments:   make(map[string]time.Time),
 	}
 
 	// Получить реальный ID камеры из БД
@@ -172,6 +176,9 @@ func (c *FFmpegClient) Start() error {
 		} else {
 			c.currentRecording = recording
 			c.currentRecordingID = &recording.ID
+			c.mu.Lock()
+			c.recordingDetections[recording.ID] = false
+			c.mu.Unlock()
 			log.Printf("📹 Started recording (ID: %d): %s", recording.ID, recordingPath)
 		}
 	}
@@ -439,6 +446,23 @@ func (c *FFmpegClient) processFrameSync(frame *storage.Frame, framePath string, 
 }
 
 func (c *FFmpegClient) handleNewRecording(videoPath string) {
+	segmentKey := filepath.Base(videoPath)
+
+	// fsnotify may emit duplicate events for the same file; process each segment once.
+	c.mu.Lock()
+	now := time.Now()
+	if seenAt, exists := c.processedSegments[segmentKey]; exists && now.Sub(seenAt) < 10*time.Second {
+		c.mu.Unlock()
+		return
+	}
+	c.processedSegments[segmentKey] = now
+	for key, ts := range c.processedSegments {
+		if now.Sub(ts) > 10*time.Minute {
+			delete(c.processedSegments, key)
+		}
+	}
+	c.mu.Unlock()
+
 	log.Printf("🎥 New video segment detected: %s", filepath.Base(videoPath))
 
 	// Подождать чтобы файл полностью записался
@@ -526,6 +550,10 @@ func (c *FFmpegClient) cleanupRecordingWithoutDetections(recordingID int) {
 	// Clean up from tracking map
 	c.mu.Lock()
 	delete(c.recordingDetections, recordingID)
+	if c.currentRecordingID != nil && *c.currentRecordingID == recordingID {
+		c.currentRecordingID = nil
+		c.currentRecording = nil
+	}
 	c.mu.Unlock()
 }
 

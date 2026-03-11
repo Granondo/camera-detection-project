@@ -1,4 +1,4 @@
-.PHONY: help setup install-deps build run run-dev test clean docker-build docker-run install-ffmpeg-mac
+.PHONY: help setup install-deps build run run-dev test clean docker-build docker-run install-ffmpeg-mac clear-all-hard
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -274,8 +274,16 @@ output-clear: ## Clear output directory
 	rm -rf output/*.jpg output/*.mp4 output/*.h264
 	@echo "✅ Output cleared"
 
-clear-all: db-clear output-clear ## Clear both database and output
+clear-all: db-clear output-clear clickhouse-clear ## Clear PostgreSQL, output, and ClickHouse
 	@echo "🎉 Everything cleared!"
+
+clear-all-hard: ## Hard reset: remove all project data (containers, volumes, output, logs)
+	@echo "⚠️  HARD RESET: this will remove ALL project Docker volumes and local output/log files."
+	@echo "Press Ctrl+C to cancel, or wait 8 seconds..."
+	@sleep 8
+	@docker-compose down -v --remove-orphans
+	@rm -rf output/*.jpg output/*.mp4 output/*.h264 logs/*
+	@echo "✅ Hard reset completed"
 
 # API Server commands
 api-build: ## Build API server
@@ -391,6 +399,9 @@ clickhouse-clear: ## Clear all data from ClickHouse
 	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.detections"
 	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.system_events"
 	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.system_metrics"
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.detections_hourly"
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.detections_daily"
+	@docker-compose exec clickhouse clickhouse-client -q "TRUNCATE TABLE surveillance.events_hourly"
 	@echo "✅ ClickHouse data cleared"
 
 clickhouse-web: ## Open ClickHouse web UI (Tabix)
