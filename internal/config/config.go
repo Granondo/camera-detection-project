@@ -14,6 +14,9 @@ type DetectionServiceConfig struct {
 	Timeout             time.Duration
 	MaxRetries          int
 	ConfidenceThreshold float64
+	// AllowedClasses is the set of YOLO class names that will be kept.
+	// Empty means all classes are allowed.
+	AllowedClasses map[string]bool
 }
 
 type Config struct {
@@ -129,6 +132,7 @@ func Load() (*Config, error) {
 			Timeout:             getDurationEnv("DETECTION_SERVICE_TIMEOUT", 30*time.Second),
 			MaxRetries:          getIntEnv("DETECTION_SERVICE_MAX_RETRIES", 3),
 			ConfidenceThreshold: getFloatEnv("DETECTION_CONFIDENCE_THRESHOLD", 0.5),
+			AllowedClasses:      getAllowedClassesEnv("DETECTION_ALLOWED_CLASSES"),
 		},
 	}
 
@@ -217,6 +221,25 @@ func maskValue(value string) string {
 	return value[:1] + "***" + value[len(value)-1:]
 }
 
+// getAllowedClassesEnv parses a comma-separated list of YOLO class names (e.g. "person,car,dog").
+// Returns nil when the variable is unset or empty, which means all classes are allowed.
+func getAllowedClassesEnv(key string) map[string]bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil
+	}
+	classes := make(map[string]bool)
+	for _, class := range strings.Split(value, ",") {
+		if class = strings.TrimSpace(strings.ToLower(class)); class != "" {
+			classes[class] = true
+		}
+	}
+	if len(classes) == 0 {
+		return nil
+	}
+	return classes
+}
+
 func getFloatEnv(key string, defaultValue float64) float64 {
 	if value := os.Getenv(key); value != "" {
 		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
@@ -224,6 +247,15 @@ func getFloatEnv(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
+}
+
+// IsAllowedClass reports whether the given YOLO class name should be kept.
+// When AllowedClasses is nil (env var not set), every class is allowed.
+func (d *DetectionServiceConfig) IsAllowedClass(class string) bool {
+	if len(d.AllowedClasses) == 0 {
+		return true
+	}
+	return d.AllowedClasses[strings.ToLower(class)]
 }
 
 func (c *Config) StorageLimitBytes() int64 {

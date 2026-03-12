@@ -651,8 +651,6 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 			break
 		}
 
-		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("detection service returned status: %d", resp.StatusCode)
@@ -670,9 +668,11 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 		}
 
 		// Разобрать ответ
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			lastErr = err
-			log.Printf("⚠️  Detection attempt %d/%d failed to decode response: %v", attempt, c.config.DetectionService.MaxRetries, err)
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if decodeErr != nil {
+			lastErr = decodeErr
+			log.Printf("⚠️  Detection attempt %d/%d failed to decode response: %v", attempt, c.config.DetectionService.MaxRetries, decodeErr)
 			if attempt < c.config.DetectionService.MaxRetries {
 				time.Sleep(time.Duration(attempt) * time.Second)
 				continue
@@ -713,22 +713,25 @@ func (c *FFmpegClient) detectObjects(framePath string, frameNum int) (bool, []De
 	if result.TotalObjects > 0 {
 		log.Printf("✅ Found %d objects in %.1fms:", result.TotalObjects, result.ProcessingTimeMS)
 
-		// Фильтровать по порогу уверенности
+		// Фильтровать по порогу уверенности и разрешённым классам
 		validDetections := []Detection{}
 		for _, detection := range result.Detections {
-			if detection.Confidence >= c.config.DetectionService.ConfidenceThreshold {
-				validDetections = append(validDetections, detection)
-				confidence := detection.Confidence * 100
-				log.Printf("   🎯 %s (%.1f%%)", detection.Class, confidence)
+			if detection.Confidence < c.config.DetectionService.ConfidenceThreshold {
+				continue
 			}
+			if !c.config.DetectionService.IsAllowedClass(detection.Class) {
+				log.Printf("   ⏭️  %s skipped (not in DETECTION_ALLOWED_CLASSES)", detection.Class)
+				continue
+			}
+			validDetections = append(validDetections, detection)
+			log.Printf("   🎯 %s (%.1f%%)", detection.Class, detection.Confidence*100)
 		}
 
 		if len(validDetections) > 0 {
 			// Event creation will happen after frame is saved in handleNewFrame
-			return true, validDetections, result.ProcessingTimeMS // ← ВОЗВРАЩАЕМ ДЕТЕКЦИИ
+			return true, validDetections, result.ProcessingTimeMS
 		} else {
-			log.Printf("📷 Objects found but below confidence threshold (%.2f) in frame #%d",
-				c.config.DetectionService.ConfidenceThreshold, frameNum)
+			log.Printf("📷 Objects found but filtered out (confidence/class) in frame #%d", frameNum)
 			return false, nil, 0
 		}
 	} else {

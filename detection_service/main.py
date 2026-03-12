@@ -107,7 +107,7 @@ def get_detector():
     global detector
     if detector is None:
         model_path = os.getenv('YOLO_MODEL_PATH', 'yolov8n.pt')
-        confidence = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
+        confidence = float(os.getenv('DETECTION_CONFIDENCE_THRESHOLD', '0.5'))
         logger.info(f"🚀 Initializing detector with model: {model_path}")
         detector = YOLODetector(model_path=model_path, confidence_threshold=confidence)
     return detector

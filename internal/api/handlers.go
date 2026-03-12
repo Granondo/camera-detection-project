@@ -24,23 +24,42 @@ type Server struct {
 	analyticsClient *analytics.ClickHouseClient
 	searchClient    *search.ElasticsearchClient
 	outputDir       string
+	allowedOrigins  map[string]bool
+}
+
+// buildAllowedOrigins reads CORS_ALLOWED_ORIGINS (comma-separated) from env,
+// defaulting to localhost development origins.
+func buildAllowedOrigins() map[string]bool {
+	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if raw == "" {
+		raw = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
+	}
+	allowed := make(map[string]bool)
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			allowed[o] = true
+		}
+	}
+	return allowed
 }
 
 // NewServer creates a new API server without cache
 func NewServer(storageService *storage.Service, outputDir string) *Server {
 	return &Server{
-		storage:   storageService,
-		cache:     nil,
-		outputDir: outputDir,
+		storage:        storageService,
+		cache:          nil,
+		outputDir:      outputDir,
+		allowedOrigins: buildAllowedOrigins(),
 	}
 }
 
 // NewServerWithCache creates a new API server with cache
 func NewServerWithCache(storageService *storage.Service, cacheService *cache.CacheService, outputDir string) *Server {
 	return &Server{
-		storage:   storageService,
-		cache:     cacheService,
-		outputDir: outputDir,
+		storage:        storageService,
+		cache:          cacheService,
+		outputDir:      outputDir,
+		allowedOrigins: buildAllowedOrigins(),
 	}
 }
 
@@ -58,6 +77,7 @@ func NewServerWithAnalytics(
 		analyticsClient: analyticsClient,
 		searchClient:    searchClient,
 		outputDir:       outputDir,
+		allowedOrigins:  buildAllowedOrigins(),
 	}
 }
 
@@ -197,22 +217,19 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	})
 }
 
-// CORS Middleware - расширенная версия
+// CORS Middleware - only allows explicitly listed origins (set via CORS_ALLOWED_ORIGINS env var)
 func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow Svelte dev server
 		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
+		if origin != "" && s.allowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Max-Age", "3600")
 
-		// Handle preflight
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return

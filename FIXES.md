@@ -7,11 +7,11 @@ Check off items as they are completed.
 
 ## Critical
 
-- [ ] **Redis healthcheck auth** — add `-a $REDIS_PASSWORD` to the healthcheck command in `docker-compose.yml:39` so dependent services (api-server, camera-detection) can actually start
-- [ ] **CORS reflects arbitrary origins** — replace the wildcard origin reflection with an explicit allowlist in `internal/api/handlers.go:201`
-- [ ] **HTTP response body leak in retry loop** — replace `defer resp.Body.Close()` inside the retry loop with explicit `resp.Body.Close()` calls in `internal/camera/ffmpeg_client.go:654`
-- [ ] **ClickHouse materialized views wrong engine** — change `SummingMergeTree` to `AggregatingMergeTree` with `avgState`/`minState`/`maxState` combinators in `clickhouse/init/01_create_tables.sql`
-- [ ] **Confidence threshold mismatch** — Python service reads `CONFIDENCE_THRESHOLD`, Go reads `DETECTION_CONFIDENCE_THRESHOLD`; align variable names across `docker-compose.yml`, `.env`, and `detection_service/main.py`
+- [x] **Redis healthcheck auth** — add `-a $REDIS_PASSWORD` to the healthcheck command in `docker-compose.yml:39` so dependent services (api-server, camera-detection) can actually start
+- [x] **CORS reflects arbitrary origins** — replace the wildcard origin reflection with an explicit allowlist in `internal/api/handlers.go:201`; configure via `CORS_ALLOWED_ORIGINS` env var
+- [x] **HTTP response body leak in retry loop** — replaced `defer resp.Body.Close()` inside loop with explicit closes after each code path in `internal/camera/ffmpeg_client.go`
+- [x] **ClickHouse materialized views wrong engine** — changed all three views from `SummingMergeTree` to `AggregatingMergeTree` with `-State` combinators in `clickhouse/init/01_create_tables.sql`; query with `-Merge` combinators
+- [x] **Confidence threshold mismatch** — renamed `CONFIDENCE_THRESHOLD` → `DETECTION_CONFIDENCE_THRESHOLD` in `detection_service/main.py` and `docker-compose.yml`; both services now use the same env var name
 
 ---
 

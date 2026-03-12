@@ -189,22 +189,27 @@ func (w *DetectionWorker) detectObjects(imagePath string) ([]queue.DetectionObje
 		return nil, 0, fmt.Errorf("detection failed: %s", result.Error)
 	}
 
-	// Фильтровать по threshold
+	// Фильтровать по threshold и разрешённым классам
 	var validDetections []queue.DetectionObject
 	for _, det := range result.Detections {
-		if det.Confidence >= w.config.DetectionService.ConfidenceThreshold {
-			validDetections = append(validDetections, queue.DetectionObject{
-				Class:      det.Class,
-				ClassID:    det.ClassID,
-				Confidence: det.Confidence,
-				BBox: queue.BBox{
-					X1: det.BBox.X1,
-					Y1: det.BBox.Y1,
-					X2: det.BBox.X2,
-					Y2: det.BBox.Y2,
-				},
-			})
+		if det.Confidence < w.config.DetectionService.ConfidenceThreshold {
+			continue
 		}
+		if !w.config.DetectionService.IsAllowedClass(det.Class) {
+			log.Printf("   ⏭️  %s skipped (not in DETECTION_ALLOWED_CLASSES)", det.Class)
+			continue
+		}
+		validDetections = append(validDetections, queue.DetectionObject{
+			Class:      det.Class,
+			ClassID:    det.ClassID,
+			Confidence: det.Confidence,
+			BBox: queue.BBox{
+				X1: det.BBox.X1,
+				Y1: det.BBox.Y1,
+				X2: det.BBox.X2,
+				Y2: det.BBox.Y2,
+			},
+		})
 	}
 
 	return validDetections, result.ProcessingTimeMS, nil

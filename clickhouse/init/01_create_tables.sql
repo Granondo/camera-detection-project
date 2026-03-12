@@ -112,45 +112,51 @@ SETTINGS index_granularity = 8192;
 -- Материализованные представления для быстрых агрегаций
 
 -- Детекции по часам
+-- Uses AggregatingMergeTree so avg/min/max are correctly merged (not summed).
+-- Query with: countMerge(total_detections), avgMerge(avg_confidence), etc.
 CREATE MATERIALIZED VIEW IF NOT EXISTS detections_hourly
-ENGINE = SummingMergeTree()
+ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(hour)
 ORDER BY (camera_id, object_class, hour)
 AS SELECT
     toStartOfHour(timestamp) as hour,
     camera_id,
     object_class,
-    count() as total_detections,
-    avg(confidence) as avg_confidence,
-    min(confidence) as min_confidence,
-    max(confidence) as max_confidence
+    countState() as total_detections,
+    avgState(confidence) as avg_confidence,
+    minState(confidence) as min_confidence,
+    maxState(confidence) as max_confidence
 FROM detections
 GROUP BY hour, camera_id, object_class;
 
 -- Детекции по дням
+-- Uses AggregatingMergeTree so avg and uniq are correctly merged (not summed).
+-- Query with: countMerge(total_detections), avgMerge(avg_confidence), uniqMerge(unique_objects).
 CREATE MATERIALIZED VIEW IF NOT EXISTS detections_daily
-ENGINE = SummingMergeTree()
+ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(date)
 ORDER BY (camera_id, object_class, date)
 AS SELECT
     date,
     camera_id,
     object_class,
-    count() as total_detections,
-    avg(confidence) as avg_confidence,
-    uniq(tracking_id) as unique_objects
+    countState() as total_detections,
+    avgState(confidence) as avg_confidence,
+    uniqState(tracking_id) as unique_objects
 FROM detections
 GROUP BY date, camera_id, object_class;
 
 -- События по часам
+-- Uses AggregatingMergeTree for consistency with the other views.
+-- Query with: countMerge(total_events).
 CREATE MATERIALIZED VIEW IF NOT EXISTS events_hourly
-ENGINE = SummingMergeTree()
+ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(hour)
 ORDER BY (event_type, severity, hour)
 AS SELECT
     toStartOfHour(timestamp) as hour,
     event_type,
     severity,
-    count() as total_events
+    countState() as total_events
 FROM system_events
 GROUP BY hour, event_type, severity;

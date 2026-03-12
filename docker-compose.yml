@@ -36,7 +36,7 @@ services:
     networks:
       - surveillance-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-redis_password} --no-auth-warning ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -103,7 +103,7 @@ services:
     container_name: yolo-detection-service
     environment:
       - YOLO_MODEL_PATH=yolov8n.pt
-      - CONFIDENCE_THRESHOLD=0.25
+      - DETECTION_CONFIDENCE_THRESHOLD=0.25
       - HOST=0.0.0.0
       - PORT=5000
       - DEBUG=false
@@ -155,6 +155,7 @@ services:
       - DETECTION_SERVICE_URL=http://detection-service:5000
       - DETECTION_SERVICE_TIMEOUT=30
       - DETECTION_CONFIDENCE_THRESHOLD=0.25
+      - DETECTION_ALLOWED_CLASSES=${DETECTION_ALLOWED_CLASSES:-person,car,truck,cat,dog,bird}
       
       # ClickHouse
       - CLICKHOUSE_HOST=clickhouse
@@ -265,6 +266,7 @@ services:
       - DETECTION_SERVICE_TIMEOUT=30
       - DETECTION_SERVICE_MAX_RETRIES=3
       - DETECTION_CONFIDENCE_THRESHOLD=0.25
+      - DETECTION_ALLOWED_CLASSES=${DETECTION_ALLOWED_CLASSES:-person,car,truck,cat,dog,bird}
       
       # Database Configuration
       - DATABASE_HOST=postgres
